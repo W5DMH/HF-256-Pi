@@ -1,0 +1,14 @@
+[Unit]
+Description=HF-256 First Boot Initialization
+After=network.target
+ConditionPathExists=!/etc/hf256/.setup_complete
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/hf256/scripts/first-boot.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

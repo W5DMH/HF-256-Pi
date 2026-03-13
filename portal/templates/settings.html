@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HF-256 Settings</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #2ea043;
+    --blue: #388bfd; --orange: #d29922; --red: #da3633;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+         sans-serif; font-size: 15px; line-height: 1.6; }
+  .container { max-width: 720px; margin: 0 auto;
+               padding: 20px 16px; }
+  nav { display: flex; gap: 8px; margin-bottom: 24px; }
+  .nav-btn { padding: 6px 14px; border-radius: 6px;
+             text-decoration: none; font-size: 0.88rem;
+             border: 1px solid var(--border); color: var(--text);
+             background: var(--surface); }
+  .nav-btn.active { background: var(--blue);
+                    border-color: var(--blue); color: #fff; }
+  h1 { font-size: 1.4rem; color: var(--blue); margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 20px;
+              font-size: 0.9rem; }
+  .card { background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius); padding: 20px;
+          margin-bottom: 18px; }
+  .card h2 { font-size: 0.95rem; font-weight: 600; color: var(--muted);
+             text-transform: uppercase; letter-spacing: 0.05em;
+             margin-bottom: 16px; }
+  label { display: block; font-size: 0.85rem; color: var(--muted);
+          margin-bottom: 5px; margin-top: 14px; }
+  label:first-of-type { margin-top: 0; }
+  input[type="text"], input[type="password"], select, textarea {
+    width: 100%; padding: 8px 10px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 0.9rem;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none; border-color: var(--blue);
+  }
+  .btn { display: inline-flex; align-items: center; gap: 6px;
+         padding: 8px 16px; border-radius: 6px; border: none;
+         cursor: pointer; font-size: 0.9rem; font-weight: 500; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary   { background: var(--accent);  color: #fff; }
+  .btn-secondary { background: var(--surface);
+                   border: 1px solid var(--border); color: var(--text); }
+  .btn-danger    { background: var(--red);     color: #fff; }
+  .btn-blue      { background: var(--blue);    color: #fff; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap;
+             margin-top: 14px; }
+  .alert { padding: 10px 14px; border-radius: 6px;
+           font-size: 0.88rem; margin-top: 12px; }
+  .alert-ok   { background: rgba(46,160,67,0.12);
+                border: 1px solid var(--accent); }
+  .alert-err  { background: rgba(218,54,51,0.12);
+                border: 1px solid var(--red); }
+  .alert-info { background: rgba(56,139,253,0.1);
+                border: 1px solid var(--blue); }
+  .alert-warn { background: rgba(210,153,34,0.1);
+                border: 1px solid var(--orange); }
+  .role-grid { display: grid;
+               grid-template-columns: 1fr 1fr; gap: 12px;
+               margin-top: 10px; }
+  .role-card { border: 2px solid var(--border); border-radius: 6px;
+               padding: 14px; cursor: pointer;
+               transition: border-color 0.15s; }
+  .role-card:hover    { border-color: var(--blue); }
+  .role-card.selected { border-color: var(--accent);
+                        background: rgba(46,160,67,0.08); }
+  .role-card .role-name { font-weight: 700; font-size: 1rem;
+                          margin-bottom: 4px; }
+  .role-card .role-desc { font-size: 0.8rem; color: var(--muted); }
+  .key-box { font-family: monospace; font-size: 0.8rem;
+             background: var(--bg); border: 1px solid var(--border);
+             border-radius: 6px; padding: 10px; word-break: break-all;
+             color: #9ebc9e; min-height: 48px; margin-top: 10px; }
+  .key-status { display: flex; align-items: center; gap: 8px;
+                margin-bottom: 12px; font-size: 0.88rem; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-ok   { background: var(--accent); }
+  .dot-err  { background: var(--red); }
+  .wifi-toggle { display: flex; gap: 0; margin-top: 10px;
+                 border: 1px solid var(--border); border-radius: 6px;
+                 overflow: hidden; }
+  .wifi-mode-btn { flex: 1; padding: 8px; text-align: center;
+                   cursor: pointer; font-size: 0.88rem;
+                   background: var(--bg); color: var(--muted);
+                   border: none; transition: all 0.15s; }
+  .wifi-mode-btn.active { background: var(--blue); color: #fff; }
+  .hidden { display: none; }
+  .spinner { display: inline-block; width: 13px; height: 13px;
+             border: 2px solid rgba(255,255,255,0.3);
+             border-top-color: #fff; border-radius: 50%;
+             animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #save-btn { min-width: 160px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <nav>
+    <a class="nav-btn" href="/status">Status</a>
+    <a class="nav-btn active" href="/settings">Settings</a>
+  </nav>
+
+  <h1>Settings</h1>
+  <p class="subtitle">Configure your station identity, encryption,
+     and network.</p>
+
+  <!-- Station Identity -->
+  <div class="card">
+    <h2>Station Identity</h2>
+
+    <label>Callsign</label>
+    <input type="text" id="callsign" maxlength="10"
+           placeholder="W1AW"
+           value="{{ settings.callsign or 'N0CALL' }}"
+           oninput="this.value = this.value.toUpperCase()">
+
+    <label>Station Role</label>
+    <div class="role-grid">
+      <div class="role-card {% if settings.role == 'hub' %}selected{% endif %}"
+           id="role-hub" onclick="selectRole('hub')">
+        <div class="role-name">Hub</div>
+        <div class="role-desc">Store-and-forward server.
+          Runs 24/7. Receives and relays messages for spoke
+          stations.</div>
+      </div>
+      <div class="role-card {% if settings.role == 'spoke' %}selected{% endif %}"
+           id="role-spoke" onclick="selectRole('spoke')">
+        <div class="role-name">Spoke</div>
+        <div class="role-desc">Client station. Connects to a hub
+          to send and receive messages over HF.</div>
+      </div>
+    </div>
+    <input type="hidden" id="role"
+           value="{{ settings.role or '' }}">
+
+    <div id="hub-address-row"
+         {% if settings.role != 'spoke' %}class="hidden"{% endif %}>
+      <label>Hub Address (spoke only)</label>
+      <input type="text" id="hub-address"
+             placeholder="192.168.1.10:14256"
+             value="{{ settings.hub_address or '' }}">
+    </div>
+  </div>
+
+  <!-- Encryption -->
+  <div class="card">
+    <h2>Encryption</h2>
+
+    <div class="key-status">
+      <div class="dot {% if key_configured %}dot-ok{% else %}dot-err{% endif %}"
+           id="key-dot"></div>
+      <span id="key-status-text">
+        {% if key_configured %}
+          Network key is configured
+        {% else %}
+          No network key — encryption disabled
+        {% endif %}
+      </span>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-blue" onclick="generateKey()">
+        🔑 Generate New Key
+      </button>
+      <button class="btn btn-secondary" onclick="exportKey()">
+        📋 Export Key
+      </button>
+    </div>
+
+    <div class="key-box" id="key-display">
+      {% if not key_configured %}
+        No key configured — click Generate to create one
+      {% else %}
+        Key is set. Click Export to view for sharing to
+        other stations.
+      {% endif %}
+    </div>
+
+    <label style="margin-top:14px">Import Key (Base64)</label>
+    <div style="display:flex;gap:8px">
+      <input type="password" id="import-key-input"
+             placeholder="Paste Base64 key from another station">
+      <button class="btn btn-secondary"
+              style="white-space:nowrap" onclick="importKey()">
+        Import
+      </button>
+    </div>
+
+    <div id="key-alert"></div>
+
+    <label style="margin-top:14px">
+      <input type="checkbox" id="enc-enabled"
+             {% if settings.encryption_enabled %}checked{% endif %}>
+      Enable encryption (all stations must share the same key)
+    </label>
+  </div>
+
+  <!-- WiFi -->
+  <div class="card">
+    <h2>WiFi</h2>
+
+    <div class="wifi-toggle">
+      <button class="wifi-mode-btn
+        {% if settings.wifi_mode != 'client' %}active{% endif %}"
+        id="btn-ap" onclick="setWifiMode('ap')">
+        📡 Access Point Mode
+      </button>
+      <button class="wifi-mode-btn
+        {% if settings.wifi_mode == 'client' %}active{% endif %}"
+        id="btn-client" onclick="setWifiMode('client')">
+        🌐 Client (Join Network)
+      </button>
+    </div>
+
+    <div id="ap-settings"
+         {% if settings.wifi_mode == 'client' %}class="hidden"{% endif %}>
+      <label>AP SSID</label>
+      <input type="text" id="ap-ssid"
+             value="{{ settings.ap_ssid or 'HF256-N0CALL' }}"
+             maxlength="32">
+      <label>AP Password</label>
+      <input type="password" id="ap-password"
+             value="{{ settings.ap_password or 'hf256setup' }}"
+             maxlength="63">
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="applyAP()">
+          Apply AP Settings
+        </button>
+      </div>
+    </div>
+
+    <div id="client-settings"
+         {% if settings.wifi_mode != 'client' %}class="hidden"{% endif %}>
+      <label>Network SSID</label>
+      <input type="text" id="client-ssid"
+             value="{{ settings.client_ssid or '' }}"
+             placeholder="Your WiFi network name">
+      <label>Password</label>
+      <input type="password" id="client-password"
+             value="{{ settings.client_password or '' }}"
+             placeholder="WiFi password">
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="joinNetwork()">
+          Join Network
+        </button>
+      </div>
+      <div class="alert alert-warn" style="margin-top:12px">
+        After joining a network the portal will be available at
+        the new IP address shown on the PiTFT display.
+        The AP will be disabled.
+      </div>
+    </div>
+
+    <div id="wifi-alert"></div>
+  </div>
+
+  <!-- Save -->
+  <div class="card">
+    <h2>Save Changes</h2>
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:14px">
+      Saves callsign, role, and encryption settings.
+      The HF-256 service will restart to apply changes.
+    </p>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="save-btn" onclick="saveSettings()">
+        💾 Save Settings
+      </button>
+      <button class="btn btn-secondary"
+              onclick="window.location.href='/status'">
+        Cancel
+      </button>
+    </div>
+    <div id="save-alert"></div>
+  </div>
+
+  <div style="text-align:center;color:var(--muted);font-size:0.78rem;
+              margin-top:8px">
+    HF-256 &bull; {{ system_info.hostname }}
+    &bull; {{ system_info.ip_address }}
+  </div>
+</div>
+
+<script>
+let selectedRole = "{{ settings.role or '' }}";
+let wifiMode     = "{{ settings.wifi_mode or 'ap' }}";
+
+function selectRole(role) {
+  selectedRole = role;
+  document.getElementById("role").value = role;
+  document.getElementById("role-hub").classList.toggle(
+    "selected", role === "hub"
+  );
+  document.getElementById("role-spoke").classList.toggle(
+    "selected", role === "spoke"
+  );
+  document.getElementById("hub-address-row").classList.toggle(
+    "hidden", role !== "spoke"
+  );
+}
+
+function setWifiMode(mode) {
+  wifiMode = mode;
+  document.getElementById("btn-ap").classList.toggle(
+    "active", mode === "ap"
+  );
+  document.getElementById("btn-client").classList.toggle(
+    "active", mode === "client"
+  );
+  document.getElementById("ap-settings").classList.toggle(
+    "hidden", mode !== "ap"
+  );
+  document.getElementById("client-settings").classList.toggle(
+    "hidden", mode !== "client"
+  );
+}
+
+function showAlert(containerId, type, msg) {
+  const cls = type === "ok"   ? "alert-ok"   :
+              type === "err"  ? "alert-err"  :
+              type === "warn" ? "alert-warn" : "alert-info";
+  document.getElementById(containerId).innerHTML =
+    '<div class="alert ' + cls + '">' + msg + '</div>';
+}
+
+function generateKey() {
+  fetch("/api/key/generate", {method: "POST"})
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        document.getElementById("key-display").textContent = d.key_b64;
+        document.getElementById("key-dot").className = "dot dot-ok";
+        document.getElementById("key-status-text").textContent =
+          "New key generated — copy to all stations";
+        showAlert("key-alert", "ok", d.message);
+      } else {
+        showAlert("key-alert", "err", d.error);
+      }
+    })
+    .catch(e => showAlert("key-alert", "err", "Error: " + e));
+}
+
+function exportKey() {
+  fetch("/api/key/export")
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        document.getElementById("key-display").textContent = d.key_b64;
+        showAlert("key-alert", "info",
+          "Key shown above. Copy it to other stations using " +
+          "Import Key.");
+      } else {
+        showAlert("key-alert", "err", d.error);
+      }
+    })
+    .catch(e => showAlert("key-alert", "err", "Error: " + e));
+}
+
+function importKey() {
+  const key = document.getElementById("import-key-input").value.trim();
+  if (!key) return showAlert("key-alert", "warn", "Paste a key first");
+  fetch("/api/key/import", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({key_b64: key})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      document.getElementById("key-dot").className = "dot dot-ok";
+      document.getElementById("key-status-text").textContent =
+        "Key imported successfully";
+      document.getElementById("import-key-input").value = "";
+      showAlert("key-alert", "ok", d.message);
+    } else {
+      showAlert("key-alert", "err", d.error);
+    }
+  })
+  .catch(e => showAlert("key-alert", "err", "Error: " + e));
+}
+
+function applyAP() {
+  const ssid = document.getElementById("ap-ssid").value.trim();
+  const pw   = document.getElementById("ap-password").value;
+  if (!ssid) return showAlert("wifi-alert", "err", "SSID required");
+  if (pw.length < 8)
+    return showAlert("wifi-alert", "err",
+      "AP password must be at least 8 characters");
+  if (!confirm("Switch to AP mode: " + ssid + "?")) return;
+
+  showAlert("wifi-alert", "info",
+    '<span class="spinner"></span> Applying...');
+  fetch("/api/wifi-mode", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({mode: "ap", ssid, password: pw})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success)
+      showAlert("wifi-alert", "ok", "AP mode active: " + ssid);
+    else
+      showAlert("wifi-alert", "err", d.error || "Failed");
+  })
+  .catch(e => showAlert("wifi-alert", "err", "Error: " + e));
+}
+
+function joinNetwork() {
+  const ssid = document.getElementById("client-ssid").value.trim();
+  const pw   = document.getElementById("client-password").value;
+  if (!ssid) return showAlert("wifi-alert", "err", "SSID required");
+  if (!confirm("Join " + ssid + "? The AP will be disabled.\n" +
+               "Check the PiTFT for the new IP address.")) return;
+
+  showAlert("wifi-alert", "info",
+    '<span class="spinner"></span> Connecting to ' + ssid + '...');
+  fetch("/api/wifi-mode", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({mode: "client", ssid, password: pw})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      const ip = d.new_ip || "check PiTFT display";
+      showAlert("wifi-alert", "ok",
+        "Connected to " + ssid + ". " +
+        "New IP: " + ip + "<br>" +
+        "Portal now at: <a href='http://" + ip + "' " +
+        "style='color:var(--blue)'>http://" + ip + "</a>");
+    } else {
+      showAlert("wifi-alert", "err",
+        d.error || "Connection failed — check SSID and password");
+    }
+  })
+  .catch(e => showAlert("wifi-alert", "err", "Error: " + e));
+}
+
+function saveSettings() {
+  const callsign = document.getElementById("callsign").value.trim();
+  const role     = document.getElementById("role").value;
+
+  if (!callsign)
+    return showAlert("save-alert", "err", "Callsign required");
+  if (!role)
+    return showAlert("save-alert", "err",
+      "Select a station role (Hub or Spoke)");
+  if (callsign === "N0CALL")
+    return showAlert("save-alert", "warn",
+      "Please set your actual callsign before saving");
+
+  const btn = document.getElementById("save-btn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+  const data = {
+    callsign,
+    role,
+    hub_address:        document.getElementById("hub-address").value.trim(),
+    encryption_enabled: document.getElementById("enc-enabled").checked,
+    wifi_mode:          wifiMode,
+    ap_ssid:            document.getElementById("ap-ssid").value.trim(),
+    ap_password:        document.getElementById("ap-password").value,
+    client_ssid:        document.getElementById("client-ssid").value.trim(),
+    client_password:    document.getElementById("client-password").value
+  };
+
+  fetch("/api/settings", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data)
+  })
+  .then(r => r.json())
+  .then(d => {
+    btn.disabled = false;
+    btn.innerHTML = "💾 Save Settings";
+    if (d.success) {
+      showAlert("save-alert", "ok", d.message);
+    } else {
+      showAlert("save-alert", "err", d.error || "Save failed");
+    }
+  })
+  .catch(e => {
+    btn.disabled = false;
+    btn.innerHTML = "💾 Save Settings";
+    showAlert("save-alert", "err", "Error: " + e);
+  });
+}
+</script>
+</body>
+</html>
+

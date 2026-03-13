@@ -1,0 +1,17 @@
+[Unit]
+Description=FreeDV TNC2 Modem
+After=rigctld.service
+ConditionPathExists=/etc/hf256/config.env
+
+[Service]
+Type=simple
+User=pi
+EnvironmentFile=/etc/hf256/config.env
+ExecStart=/bin/bash -c "${FREEDVTNC2_CMD}"
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

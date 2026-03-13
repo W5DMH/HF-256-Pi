@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HF-256 Setup</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #2ea043;
+    --blue: #388bfd; --orange: #d29922; --red: #da3633;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+         sans-serif; font-size: 15px; line-height: 1.6; }
+  .container { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 1.6rem; color: var(--blue); margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 28px; }
+  .card { background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius); padding: 20px;
+          margin-bottom: 20px; }
+  .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 14px;
+             color: var(--blue); display: flex; align-items: center;
+             gap: 8px; }
+  .step-badge { background: var(--blue); color: #fff;
+                border-radius: 50%; width: 22px; height: 22px;
+                display: inline-flex; align-items: center;
+                justify-content: center; font-size: 0.8rem;
+                font-weight: 700; flex-shrink: 0; }
+  label { display: block; font-size: 0.85rem; color: var(--muted);
+          margin-bottom: 5px; margin-top: 12px; }
+  label:first-of-type { margin-top: 0; }
+  select, input[type="text"], input[type="number"],
+  input[type="password"] {
+    width: 100%; padding: 8px 10px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 0.9rem;
+  }
+  select:focus, input:focus {
+    outline: none; border-color: var(--blue);
+  }
+  .btn { display: inline-flex; align-items: center; gap: 6px;
+         padding: 8px 16px; border-radius: 6px; border: none;
+         cursor: pointer; font-size: 0.9rem; font-weight: 500;
+         transition: opacity 0.15s; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-secondary { background: var(--surface);
+                   border: 1px solid var(--border); color: var(--text); }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap;
+             margin-top: 14px; }
+  .status-row { display: flex; align-items: center; gap: 10px;
+                margin-top: 10px; font-size: 0.85rem;
+                color: var(--muted); min-height: 24px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%;
+         flex-shrink: 0; }
+  .dot-ok  { background: var(--accent); }
+  .dot-err { background: var(--red); }
+  .dot-warn{ background: var(--orange); }
+  .dot-idle{ background: var(--muted); }
+  .radio-grid { display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                gap: 10px; margin-top: 10px; }
+  .radio-card { border: 2px solid var(--border); border-radius: 6px;
+                padding: 12px; cursor: pointer;
+                transition: border-color 0.15s; }
+  .radio-card:hover  { border-color: var(--blue); }
+  .radio-card.selected { border-color: var(--accent);
+                         background: rgba(46,160,67,0.08); }
+  .radio-card .name { font-weight: 600; margin-bottom: 2px; }
+  .radio-card .desc { font-size: 0.78rem; color: var(--muted); }
+  .mode-grid { display: grid;
+               grid-template-columns: repeat(3, 1fr); gap: 10px;
+               margin-top: 10px; }
+  .mode-card { border: 2px solid var(--border); border-radius: 6px;
+               padding: 10px; cursor: pointer;
+               transition: border-color 0.15s; text-align: center; }
+  .mode-card:hover    { border-color: var(--blue); }
+  .mode-card.selected { border-color: var(--accent);
+                        background: rgba(46,160,67,0.08); }
+  .mode-card .mode-name { font-weight: 700; font-size: 1rem; }
+  .mode-card .mode-bw   { font-size: 0.75rem; color: var(--muted); }
+  .alert { padding: 10px 14px; border-radius: 6px;
+           font-size: 0.88rem; margin-top: 14px; }
+  .alert-ok   { background: rgba(46,160,67,0.12);
+                border: 1px solid var(--accent); }
+  .alert-err  { background: rgba(218,54,51,0.12);
+                border: 1px solid var(--red); }
+  .alert-info { background: rgba(56,139,253,0.1);
+                border: 1px solid var(--blue); }
+  .hidden { display: none; }
+  #complete-btn { width: 100%; padding: 14px; font-size: 1rem; }
+  .spinner { display: inline-block; width: 14px; height: 14px;
+             border: 2px solid rgba(255,255,255,0.3);
+             border-top-color: #fff; border-radius: 50%;
+             animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .detect-badge { font-size: 0.75rem; background: rgba(56,139,253,0.15);
+                  color: var(--blue); padding: 2px 8px;
+                  border-radius: 10px; margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>HF-256 Setup</h1>
+  <p class="subtitle">Configure your radio hardware to get started.
+     Settings can be changed later in the Settings page.</p>
+
+  <!-- Step 1: Radio -->
+  <div class="card">
+    <h2><span class="step-badge">1</span> Select Radio</h2>
+    <div class="radio-grid" id="radio-grid">
+      {% for mfr, radios in manufacturers.items() %}
+        {% for radio in radios %}
+        <div class="radio-card" data-id="{{ radio.id }}"
+             onclick="selectRadio('{{ radio.id }}', this)">
+          <div class="name">{{ radio.name }}</div>
+          <div class="desc">{{ radio.manufacturer }}</div>
+          <div class="desc" style="margin-top:4px;color:#8b949e">
+            {{ radio.ptt_method }} PTT &bull;
+            {% if radio.audio_interface == 'external' %}
+              External audio
+            {% else %}
+              Built-in audio
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Step 2: Hardware Detection -->
+  <div class="card">
+    <h2>
+      <span class="step-badge">2</span> Detect Hardware
+      <span class="detect-badge" id="detect-badge" style="display:none">
+        Auto-detected
+      </span>
+    </h2>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="detectHardware()">
+        🔍 Scan for Devices
+      </button>
+    </div>
+
+    <label>Serial Port (CAT / PTT)</label>
+    <select id="serial-port">
+      <option value="">-- scan first --</option>
+    </select>
+
+    <label>Audio Card</label>
+    <select id="audio-card">
+      <option value="">-- scan first --</option>
+    </select>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="testCAT()">
+        📡 Test CAT
+      </button>
+      <button class="btn btn-secondary" onclick="testPTT()">
+        🔊 Test PTT (keys TX)
+      </button>
+      <button class="btn btn-danger" onclick="releasePTT()">
+        ⛔ Release PTT
+      </button>
+    </div>
+    <div class="status-row">
+      <div class="dot dot-idle" id="hw-dot"></div>
+      <span id="hw-status">No scan performed yet</span>
+    </div>
+  </div>
+
+  <!-- Step 3: FreeDV Mode -->
+  <div class="card">
+    <h2><span class="step-badge">3</span> FreeDV Mode</h2>
+    <div class="mode-grid">
+      <div class="mode-card selected" data-mode="DATAC1"
+           onclick="selectMode('DATAC1', this)">
+        <div class="mode-name">DATAC1</div>
+        <div class="mode-bw">~2.5kHz &bull; Balanced</div>
+        <div class="mode-bw" style="margin-top:4px;color:#2ea043">
+          ✓ Recommended
+        </div>
+      </div>
+      <div class="mode-card" data-mode="DATAC3"
+           onclick="selectMode('DATAC3', this)">
+        <div class="mode-name">DATAC3</div>
+        <div class="mode-bw">~2.0kHz &bull; Narrow</div>
+        <div class="mode-bw" style="margin-top:4px">
+          Crowded bands
+        </div>
+      </div>
+      <div class="mode-card" data-mode="DATAC4"
+           onclick="selectMode('DATAC4', this)">
+        <div class="mode-name">DATAC4</div>
+        <div class="mode-bw">~3.0kHz &bull; Wide</div>
+        <div class="mode-bw" style="margin-top:4px">
+          Better propagation
+        </div>
+      </div>
+    </div>
+    <div class="alert alert-info" style="margin-top:14px">
+      All stations on your network must use the same FreeDV mode.
+      DATAC1 is recommended for most HF conditions.
+    </div>
+  </div>
+
+  <!-- Step 4: Audio Check -->
+  <div class="card">
+    <h2><span class="step-badge">4</span> Audio Level Check</h2>
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:12px">
+      Tune your radio to a quiet frequency and check the receive
+      audio level. The meter should show activity when signals
+      are present.
+    </p>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="checkAudio()">
+        🎙️ Check RX Level (1s)
+      </button>
+    </div>
+    <div class="status-row">
+      <div class="dot dot-idle" id="audio-dot"></div>
+      <span id="audio-status">Not checked</span>
+    </div>
+  </div>
+
+  <!-- Complete Setup -->
+  <div class="card">
+    <h2><span class="step-badge">5</span> Complete Setup</h2>
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:14px">
+      This writes the hardware configuration and starts the FreeDV
+      modem. You will then configure your callsign, encryption key,
+      and station role on the <strong>Settings</strong> page.
+    </p>
+    <button class="btn btn-primary" id="complete-btn"
+            onclick="completeSetup()" disabled>
+      ✓ Complete Hardware Setup
+    </button>
+    <div id="complete-status"></div>
+  </div>
+
+  <div style="text-align:center;color:var(--muted);font-size:0.8rem;
+              margin-top:12px">
+    HF-256 &bull; {{ system_info.hostname }}
+    &bull; {{ system_info.ip_address }}
+  </div>
+</div>
+
+<script>
+let selectedRadio = null;
+let selectedMode  = "DATAC1";
+let serialPort    = null;
+let audioCard     = null;
+
+function selectRadio(id, el) {
+  document.querySelectorAll(".radio-card").forEach(
+    c => c.classList.remove("selected")
+  );
+  el.classList.add("selected");
+  selectedRadio = id;
+  checkReady();
+}
+
+function selectMode(mode, el) {
+  document.querySelectorAll(".mode-card").forEach(
+    c => c.classList.remove("selected")
+  );
+  el.classList.add("selected");
+  selectedMode = mode;
+}
+
+function hwDot(state, msg) {
+  const dot = document.getElementById("hw-dot");
+  const txt = document.getElementById("hw-status");
+  dot.className = "dot dot-" + state;
+  txt.textContent = msg;
+}
+
+function detectHardware() {
+  hwDot("idle", "Scanning...");
+  fetch("/api/detect-hardware")
+    .then(r => r.json())
+    .then(data => {
+      const sp = document.getElementById("serial-port");
+      const ac = document.getElementById("audio-card");
+      sp.innerHTML = '<option value="">-- none --</option>';
+      ac.innerHTML = '<option value="">-- none --</option>';
+
+      data.serial_ports.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.port;
+        opt.textContent = p.port + (p.description ?
+          " — " + p.description : "");
+        sp.appendChild(opt);
+      });
+
+      data.audio_devices.forEach(d => {
+        const opt = document.createElement("option");
+        opt.value = d.card;
+        opt.textContent = "Card " + d.card + ": " + d.name;
+        ac.appendChild(opt);
+      });
+
+      const rec = data.recommended;
+      if (rec.serial_port) {
+        sp.value = rec.serial_port;
+        serialPort = rec.serial_port;
+      }
+      if (rec.audio_card !== null && rec.audio_card !== undefined) {
+        ac.value = rec.audio_card;
+        audioCard = rec.audio_card;
+      }
+
+      sp.onchange = () => { serialPort = sp.value; checkReady(); };
+      ac.onchange = () => { audioCard  = ac.value; checkReady(); };
+
+      const autoDetected = data.digirig.found || data.x6100.found;
+      document.getElementById("detect-badge").style.display =
+        autoDetected ? "inline" : "none";
+
+      let msg = data.serial_ports.length + " port(s), " +
+                data.audio_devices.length + " audio card(s) found";
+      if (data.digirig.found)
+        msg += " — DigiRig auto-detected";
+      else if (data.x6100.found)
+        msg += " — X6100 auto-detected";
+
+      hwDot("ok", msg);
+      checkReady();
+    })
+    .catch(e => hwDot("err", "Scan failed: " + e));
+}
+
+function testCAT() {
+  if (!serialPort || !selectedRadio)
+    return hwDot("warn", "Select a radio and port first");
+  hwDot("idle", "Testing CAT...");
+  fetch("/api/test-cat", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({port: serialPort, radio_id: selectedRadio})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      const freq = d.frequency ?
+        (d.frequency / 1e6).toFixed(3) + " MHz" : "";
+      hwDot("ok", "CAT OK " + (freq || d.message || ""));
+    } else {
+      hwDot("err", "CAT failed: " + d.error);
+    }
+  })
+  .catch(e => hwDot("err", "Error: " + e));
+}
+
+function testPTT() {
+  if (!serialPort || !selectedRadio)
+    return hwDot("warn", "Select a radio and port first");
+  if (!confirm("This will briefly key your transmitter (0.5s). " +
+               "Make sure the radio is on a safe frequency. Continue?"))
+    return;
+  hwDot("idle", "Testing PTT...");
+  fetch("/api/test-ptt", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({port: serialPort, radio_id: selectedRadio})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) hwDot("ok", d.message || "PTT OK");
+    else           hwDot("err", "PTT failed: " + d.error);
+  })
+  .catch(e => hwDot("err", "Error: " + e));
+}
+
+function releasePTT() {
+  if (!serialPort || !selectedRadio) return;
+  fetch("/api/release-ptt", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({port: serialPort, radio_id: selectedRadio})
+  })
+  .then(r => r.json())
+  .then(d => hwDot("ok", d.message || "PTT released"))
+  .catch(e => hwDot("err", "Error: " + e));
+}
+
+function checkAudio() {
+  const card = audioCard !== null ? audioCard : 0;
+  const dot  = document.getElementById("audio-dot");
+  const txt  = document.getElementById("audio-status");
+  dot.className = "dot dot-idle";
+  txt.textContent = "Sampling 1 second...";
+  fetch("/api/audio-level/check/" + card)
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        const db   = d.rx_db || -60;
+        const good = db > -50;
+        dot.className = "dot " + (good ? "dot-ok" : "dot-warn");
+        txt.textContent = "RX level: " + db.toFixed(1) + " dB " +
+          (good ? "(signal detected)" : "(quiet / no signal)");
+      } else {
+        dot.className = "dot dot-err";
+        txt.textContent = "Error: " + d.error;
+      }
+    })
+    .catch(e => {
+      dot.className = "dot dot-err";
+      txt.textContent = "Error: " + e;
+    });
+}
+
+function checkReady() {
+  const btn = document.getElementById("complete-btn");
+  btn.disabled = !(selectedRadio &&
+    document.getElementById("audio-card").value !== "");
+}
+
+function completeSetup() {
+  if (!selectedRadio)
+    return showCompleteStatus("error", "Select a radio first");
+  const ac = document.getElementById("audio-card").value;
+  if (ac === "")
+    return showCompleteStatus("error", "Select an audio card");
+
+  const btn = document.getElementById("complete-btn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Setting up...';
+
+  fetch("/api/complete-setup", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      radio_id:    selectedRadio,
+      serial_port: serialPort || "",
+      audio_card:  parseInt(ac),
+      freedv_mode: selectedMode
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      showCompleteStatus("ok",
+        d.message + " Redirecting to Settings...");
+      setTimeout(() => window.location.href = "/settings", 3000);
+    } else {
+      showCompleteStatus("error", d.error || "Setup failed");
+      btn.disabled = false;
+      btn.innerHTML = "✓ Complete Hardware Setup";
+    }
+  })
+  .catch(e => {
+    showCompleteStatus("error", "Error: " + e);
+    btn.disabled = false;
+    btn.innerHTML = "✓ Complete Hardware Setup";
+  });
+}
+
+function showCompleteStatus(type, msg) {
+  const el = document.getElementById("complete-status");
+  const cls = type === "ok"    ? "alert-ok" :
+              type === "error" ? "alert-err" : "alert-info";
+  el.innerHTML = '<div class="alert ' + cls + '">' + msg + '</div>';
+}
+
+// Auto-scan on load
+window.onload = () => detectHardware();
+</script>
+</body>
+</html>

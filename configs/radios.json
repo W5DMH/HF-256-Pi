@@ -1,0 +1,42 @@
+[
+  {
+    "id": "digirig-mobile",
+    "manufacturer": "DigiRig",
+    "model": "Mobile",
+    "hamlib_id": 1,
+    "baud_rate": 9600,
+    "ptt_method": "RTS",
+    "audio_interface": "external",
+    "requires_external_audio": true,
+    "description": "DigiRig Mobile USB audio and CAT interface",
+    "audio_settings": {
+      "recommended_alsa_rx": 75,
+      "recommended_alsa_tx": 80,
+      "alc_guidance": "Watch ALC meter during TX. Adjust until stable power output.",
+      "alc_target": "Minimal"
+    },
+    "ptt_on_delay_ms": 300,
+    "ptt_off_delay_ms": 200
+  },
+  {
+    "id": "xiegu-x6100",
+    "manufacturer": "Xiegu",
+    "model": "X6100",
+    "hamlib_id": 3085,
+    "baud_rate": 19200,
+    "ptt_method": "CAT",
+    "audio_interface": "builtin",
+    "requires_external_audio": false,
+    "description": "Xiegu X6100 with built-in USB audio and CAT control",
+    "audio_settings": {
+      "recommended_alsa_rx": 50,
+      "recommended_alsa_tx": 50,
+      "alc_guidance": "Xiegu ALC is REVERSED: high ALC (90-100) = good. Adjust until ALC reads 90-100.",
+      "alc_target": "90-100",
+      "alc_reversed": true,
+      "radio_rx_menu": "Set RX audio output in radio menu to 50%"
+    },
+    "ptt_on_delay_ms": 250,
+    "ptt_off_delay_ms": 150
+  }
+]

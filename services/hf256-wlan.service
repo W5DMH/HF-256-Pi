@@ -1,0 +1,15 @@
+[Unit]
+Description=HF-256 WiFi Mode Restore
+After=network-pre.target
+Before=network.target hostapd.service
+Wants=network-pre.target
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=30
+ExecStart=/opt/hf256/scripts/hf256-wifi-restore.sh
+IgnoreExitCode=yes
+StandardOutput=journal
+StandardError=journal
+[Install]
+WantedBy=multi-user.target

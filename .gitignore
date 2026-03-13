@@ -1,0 +1,16 @@
+# Base image
+bookworm-lite.img
+
+# Build outputs
+output/*.img
+output/*.img.xz
+output/*.log
+output/hf256-work.img
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.vscode/
+*.swp
+*~

@@ -1,0 +1,17 @@
+[Unit]
+Description=HF-256 PiTFT Status Display
+After=network.target hf256-portal.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/hf256/scripts/display.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

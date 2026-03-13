@@ -1,0 +1,18 @@
+[Unit]
+Description=HF-256 Web Configuration Portal
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/hf256/portal
+ExecStart=/usr/bin/python3 /opt/hf256/portal/app.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

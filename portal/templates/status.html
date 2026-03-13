@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HF-256 Status</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #2ea043;
+    --blue: #388bfd; --orange: #d29922; --red: #da3633;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+         sans-serif; font-size: 15px; line-height: 1.6; }
+  .container { max-width: 720px; margin: 0 auto;
+               padding: 20px 16px; }
+  nav { display: flex; gap: 8px; margin-bottom: 24px;
+        flex-wrap: wrap; }
+  .nav-btn { padding: 6px 14px; border-radius: 6px;
+             text-decoration: none; font-size: 0.88rem;
+             border: 1px solid var(--border); color: var(--text);
+             background: var(--surface); }
+  .nav-btn.active { background: var(--blue);
+                    border-color: var(--blue); color: #fff; }
+  h1 { font-size: 1.4rem; color: var(--blue);
+       margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 20px;
+              font-size: 0.9rem; }
+  .card { background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius); padding: 18px;
+          margin-bottom: 16px; }
+  .card h2 { font-size: 0.95rem; font-weight: 600; color: var(--muted);
+             text-transform: uppercase; letter-spacing: 0.05em;
+             margin-bottom: 14px; }
+  .svc-row { display: flex; align-items: center; gap: 10px;
+             padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .svc-row:last-child { border-bottom: none; }
+  .dot { width: 10px; height: 10px; border-radius: 50%;
+         flex-shrink: 0; }
+  .dot-ok   { background: var(--accent); }
+  .dot-err  { background: var(--red); }
+  .dot-warn { background: var(--orange); }
+  .dot-idle { background: var(--muted); }
+  .svc-name { flex: 1; font-weight: 500; }
+  .svc-badge { font-size: 0.75rem; padding: 2px 8px;
+               border-radius: 10px; font-weight: 600; }
+  .badge-ok  { background: rgba(46,160,67,0.15); color: var(--accent); }
+  .badge-err { background: rgba(218,54,51,0.15); color: var(--red); }
+  .badge-warn{ background: rgba(210,153,34,0.15); color: var(--orange); }
+  .svc-ctrl { display: flex; gap: 6px; }
+  .btn-xs { padding: 3px 10px; font-size: 0.78rem; border-radius: 5px;
+            border: 1px solid var(--border); background: var(--bg);
+            color: var(--text); cursor: pointer; }
+  .btn-xs:hover { border-color: var(--blue); }
+  .stats-grid { display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(140px,1fr));
+                gap: 12px; }
+  .stat-box { background: var(--bg); border: 1px solid var(--border);
+              border-radius: 6px; padding: 12px; text-align: center; }
+  .stat-val { font-size: 1.4rem; font-weight: 700; color: var(--blue); }
+  .stat-lbl { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+  .log-box { background: var(--bg); border: 1px solid var(--border);
+             border-radius: 6px; padding: 12px; font-family: monospace;
+             font-size: 0.78rem; line-height: 1.5; max-height: 260px;
+             overflow-y: auto; color: #9ebc9e; white-space: pre-wrap;
+             word-break: break-all; }
+  .log-select { display: flex; gap: 8px; margin-bottom: 10px;
+                flex-wrap: wrap; align-items: center; }
+  .log-select select { padding: 5px 8px; background: var(--bg);
+                       border: 1px solid var(--border);
+                       border-radius: 5px; color: var(--text);
+                       font-size: 0.85rem; }
+  .btn { display: inline-flex; align-items: center; gap: 6px;
+         padding: 7px 14px; border-radius: 6px; border: none;
+         cursor: pointer; font-size: 0.88rem; font-weight: 500; }
+  .btn-secondary { background: var(--surface);
+                   border: 1px solid var(--border);
+                   color: var(--text); }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap;
+             margin-top: 12px; }
+  .modem-row { display: flex; justify-content: space-between;
+               align-items: center; padding: 6px 0;
+               border-bottom: 1px solid var(--border);
+               font-size: 0.88rem; }
+  .modem-row:last-child { border-bottom: none; }
+  .modem-key { color: var(--muted); }
+  .modem-val { font-weight: 500; }
+  .setup-warn { background: rgba(210,153,34,0.1);
+                border: 1px solid var(--orange);
+                border-radius: 8px; padding: 16px;
+                margin-bottom: 16px; }
+  .setup-warn h3 { color: var(--orange); margin-bottom: 6px; }
+  .setup-warn p  { color: var(--muted); font-size: 0.88rem; }
+  .setup-warn a  { color: var(--blue); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="container">
+  <nav>
+    <a class="nav-btn active" href="/status">Status</a>
+    <a class="nav-btn" href="/settings">Settings</a>
+  </nav>
+
+  <h1>HF-256</h1>
+  <p class="subtitle">
+    {{ settings.callsign or "N0CALL" }}
+    &bull; {{ settings.role|upper or "Unconfigured" }}
+    &bull; {{ system_info.ip_address }}
+  </p>
+
+  <div id="setup-warn" class="setup-warn hidden">
+    <h3>⚠ Setup Incomplete</h3>
+    <p>Radio hardware has been configured.
+       Please complete your station setup in
+       <a href="/settings">Settings</a>:
+       callsign, encryption key, and station role.</p>
+  </div>
+
+  <!-- Services -->
+  <div class="card">
+    <h2>Services</h2>
+    <div id="svc-list">
+      <div class="svc-row">
+        <div class="dot dot-idle"></div>
+        <div class="svc-name">Loading...</div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="restartAll()">
+        ↺ Restart Stack
+      </button>
+    </div>
+  </div>
+
+  <!-- System Health -->
+  <div class="card">
+    <h2>System</h2>
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-box">
+        <div class="stat-val" id="stat-temp">--</div>
+        <div class="stat-lbl">CPU Temp</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" id="stat-uptime">--</div>
+        <div class="stat-lbl">Uptime</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" id="stat-mem">--</div>
+        <div class="stat-lbl">Memory Used</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" id="stat-disk">--</div>
+        <div class="stat-lbl">Disk Used</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modem Status -->
+  <div class="card">
+    <h2>FreeDV Modem</h2>
+    <div id="modem-info">
+      <div class="modem-row">
+        <span class="modem-key">Status</span>
+        <span class="modem-val" id="modem-online">Checking...</span>
+      </div>
+      <div class="modem-row">
+        <span class="modem-key">Mode</span>
+        <span class="modem-val" id="modem-mode">--</span>
+      </div>
+      <div class="modem-row">
+        <span class="modem-key">PTT</span>
+        <span class="modem-val" id="modem-ptt">--</span>
+      </div>
+      <div class="modem-row">
+        <span class="modem-key">Channel</span>
+        <span class="modem-val" id="modem-channel">--</span>
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:12px">
+      <label style="color:var(--muted);font-size:0.85rem;
+                    align-self:center;margin:0">Mode:</label>
+      <select id="mode-select" style="padding:6px 10px;
+        background:var(--bg);border:1px solid var(--border);
+        border-radius:5px;color:var(--text)">
+        <option>DATAC1</option>
+        <option>DATAC3</option>
+        <option>DATAC4</option>
+      </select>
+      <button class="btn btn-secondary" onclick="setMode()">
+        Apply
+      </button>
+    </div>
+  </div>
+
+  <!-- Logs -->
+  <div class="card">
+    <h2>Logs</h2>
+    <div class="log-select">
+      <select id="log-service">
+        <option value="hf256">hf256</option>
+        <option value="freedvtnc2">freedvtnc2</option>
+        <option value="rigctld">rigctld</option>
+        <option value="hf256-portal">portal</option>
+        <option value="hf256-firstboot">firstboot</option>
+        <option value="hostapd">hostapd</option>
+      </select>
+      <button class="btn btn-secondary" onclick="loadLogs()">
+        Refresh
+      </button>
+    </div>
+    <div class="log-box" id="log-box">Select service and click Refresh</div>
+  </div>
+
+  <!-- System Actions -->
+  <div class="card">
+    <h2>System Actions</h2>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="doReboot()">
+        ↺ Reboot
+      </button>
+      <button class="btn btn-secondary" onclick="doShutdown()">
+        ⏻ Shutdown
+      </button>
+      <button class="btn btn-danger" onclick="resetSetup()">
+        ⚠ Reset to Setup
+      </button>
+    </div>
+  </div>
+
+  <div style="text-align:center;color:var(--muted);font-size:0.78rem;
+              margin-top:8px">
+    HF-256 &bull; {{ system_info.hostname }}
+    &bull; <span id="refresh-counter">refreshing...</span>
+  </div>
+</div>
+
+<script>
+let refreshInterval = null;
+let refreshCount    = 0;
+
+function buildSvcRow(name, running, label) {
+  return `
+    <div class="svc-row">
+      <div class="dot ${running ? 'dot-ok' : 'dot-err'}"></div>
+      <div class="svc-name">${label}</div>
+      <span class="svc-badge ${running ? 'badge-ok' : 'badge-err'}">
+        ${running ? 'running' : 'stopped'}
+      </span>
+      <div class="svc-ctrl">
+        <button class="btn-xs"
+          onclick="ctrlSvc('${name}','restart')">↺</button>
+        <button class="btn-xs"
+          onclick="ctrlSvc('${name}', ${running ? "'stop'" : "'start'"})">
+          ${running ? '⏹' : '▶'}
+        </button>
+      </div>
+    </div>`;
+}
+
+function refreshStatus() {
+  fetch("/api/service-status")
+    .then(r => r.json())
+    .then(d => {
+      const setupComplete = d.setup_complete;
+      const callsign = d.callsign || "N0CALL";
+      const role = d.role || "";
+      var warn = document.getElementById("setup-warn");
+      if (setupComplete && role !== "" && callsign !== "N0CALL") {
+        warn.style.display = "none";
+      } else {
+        warn.style.display = "block";
+      }
+
+      let html = "";
+      html += buildSvcRow("hf256",      d.hf256.running,      "HF-256 App");
+      html += buildSvcRow("freedvtnc2", d.freedvtnc2.running,  "FreeDV Modem");
+      html += buildSvcRow("rigctld",    d.rigctld.running,     "rigctld CAT");
+      html += buildSvcRow("hf256-portal", d.portal.running,   "Web Portal");
+
+      const apRunning = d.wifi && d.wifi.ap_running;
+      html += buildSvcRow("hostapd", apRunning,
+        "WiFi AP " + (d.wifi ? "(" + d.wifi.ssid + ")" : ""));
+
+      document.getElementById("svc-list").innerHTML = html;
+    })
+    .catch(() => {});
+
+  fetch("/api/system-health")
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById("stat-temp").textContent =
+        d.cpu_temp !== null ? d.cpu_temp + "°C" : "--";
+      document.getElementById("stat-uptime").textContent =
+        d.uptime || "--";
+      document.getElementById("stat-mem").textContent =
+        d.memory_percent !== undefined ?
+        d.memory_percent + "%" : "--";
+      document.getElementById("stat-disk").textContent =
+        d.disk_percent !== undefined ?
+        d.disk_percent + "%" : "--";
+    })
+    .catch(() => {});
+
+  fetch("/api/modem-status")
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById("modem-online").textContent =
+        d.online ? "Online" : "Offline";
+      document.getElementById("modem-mode").textContent =
+        d.mode || "--";
+      document.getElementById("modem-ptt").textContent =
+        d.ptt || "--";
+      document.getElementById("modem-channel").textContent =
+        d.channel || "--";
+      if (d.mode) {
+        document.getElementById("mode-select").value = d.mode;
+      }
+    })
+    .catch(() => {
+      document.getElementById("modem-online").textContent = "Offline";
+    });
+
+  refreshCount++;
+  document.getElementById("refresh-counter").textContent =
+    "next refresh in 10s (cycle " + refreshCount + ")";
+}
+
+function ctrlSvc(name, action) {
+  fetch("/api/service/" + name + "/" + action, {method: "POST"})
+    .then(() => setTimeout(refreshStatus, 1500))
+    .catch(() => {});
+}
+
+function restartAll() {
+  if (!confirm("Restart FreeDV modem and HF-256 app?")) return;
+  fetch("/api/restart-services", {method: "POST"})
+    .then(r => r.json())
+    .then(d => { alert(d.message || "Restarted"); refreshStatus(); })
+    .catch(() => {});
+}
+
+function setMode() {
+  const mode = document.getElementById("mode-select").value;
+  fetch("/api/set-freedv-mode", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({mode})
+  })
+  .then(r => r.json())
+  .then(d => { if (d.success) refreshStatus(); })
+  .catch(() => {});
+}
+
+function loadLogs() {
+  const svc = document.getElementById("log-service").value;
+  const box = document.getElementById("log-box");
+  box.textContent = "Loading...";
+  fetch("/api/logs/" + svc + "?lines=60")
+    .then(r => r.json())
+    .then(d => {
+      box.textContent = d.logs || "No logs";
+      box.scrollTop   = box.scrollHeight;
+    })
+    .catch(e => { box.textContent = "Error: " + e; });
+}
+
+function doReboot() {
+  if (!confirm("Reboot the Pi?")) return;
+  fetch("/api/reboot", {method: "POST"})
+    .then(r => r.json())
+    .then(d => alert(d.message))
+    .catch(() => {});
+}
+
+function doShutdown() {
+  if (!confirm("Shut down the Pi?")) return;
+  fetch("/api/shutdown", {method: "POST"})
+    .then(r => r.json())
+    .then(d => alert(d.message))
+    .catch(() => {});
+}
+
+function resetSetup() {
+  if (!confirm("This will stop all services and return to the " +
+               "hardware setup wizard. Continue?")) return;
+  fetch("/api/reset-setup", {method: "POST"})
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) window.location.href = "/";
+      else alert("Error: " + d.error);
+    })
+    .catch(() => {});
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+  setTimeout(refreshStatus, 2000);
+  refreshInterval = setInterval(refreshStatus, 10000);
+});
+
+</script>
+</body>
+</html>
