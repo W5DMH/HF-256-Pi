@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """
 HF-256 Web Configuration Portal
-Flask app serving setup wizard, status dashboard, and settings page.
+Flask app serving setup wizard, status dashboard, settings page,
+and the HF-256 Console terminal.
 Adapted from ReticulumHF setup-portal/app.py.
 Runs as root on port 80 via hf256-portal.service.
 """
 
 import json
 import os
+import queue
 import re
 import shutil
 import socket
+import struct
 import subprocess
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +24,7 @@ from typing import Optional, Tuple
 from flask import (
     Flask, render_template, request, jsonify, redirect, url_for
 )
+from flask_sock import Sock
 
 from hardware import (
     load_radios, detect_serial_ports, detect_audio_devices,
@@ -44,7 +49,8 @@ FREEDVTNC2_BIN    = Path("/usr/bin/python3")
 # ------------------------------------------------------------------ #
 # App
 # ------------------------------------------------------------------ #
-app = Flask(__name__)
+app  = Flask(__name__)
+sock = Sock(app)
 
 
 @app.after_request
@@ -197,12 +203,12 @@ def freedvtnc2_command(command: str,
                         timeout: float = 5.0) -> Tuple[bool, str]:
     """Send command to freedvtnc2 command port 8002."""
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        sock.connect(("127.0.0.1", 8002))
-        sock.send(f"{command}\n".encode())
-        response = sock.recv(1024).decode().strip()
-        sock.close()
+        sock_cmd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_cmd.settimeout(timeout)
+        sock_cmd.connect(("127.0.0.1", 8002))
+        sock_cmd.send(f"{command}\n".encode())
+        response = sock_cmd.recv(1024).decode().strip()
+        sock_cmd.close()
         return response.startswith("OK"), response
     except ConnectionRefusedError:
         return False, "ERROR freedvtnc2 not running"
@@ -251,6 +257,14 @@ def settings_page():
                            system_info=get_system_info(),
                            settings=load_settings(),
                            key_configured=KEY_FILE.exists())
+
+
+@app.route("/console")
+def console():
+    """Serve the HF-256 Console terminal page."""
+    return render_template("console.html",
+                           system_info=get_system_info(),
+                           settings=load_settings())
 
 
 # ------------------------------------------------------------------ #
@@ -344,10 +358,10 @@ def api_audio_level(card):
 
 @app.route("/api/complete-setup", methods=["POST"])
 def api_complete_setup():
-    data       = request.json or {}
-    radio_id   = data.get("radio_id")
+    data        = request.json or {}
+    radio_id    = data.get("radio_id")
     serial_port = data.get("serial_port", "")
-    audio_card = data.get("audio_card")
+    audio_card  = data.get("audio_card")
     freedv_mode = data.get("freedv_mode", "DATAC1")
 
     if not radio_id or audio_card is None:
@@ -444,8 +458,8 @@ def api_get_settings():
 
 @app.route("/api/settings", methods=["POST"])
 def api_save_settings():
-    data     = request.json or {}
-    current  = load_settings()
+    data    = request.json or {}
+    current = load_settings()
 
     # Validate callsign if provided
     callsign = data.get("callsign", current["callsign"]).upper().strip()
@@ -502,7 +516,6 @@ def api_generate_key():
         os.chmod(KEY_FILE, 0o600)
         key_b64 = base64.b64encode(key).decode()
 
-        # Update settings
         settings = load_settings()
         settings["network_key_set"] = True
         save_settings(settings)
@@ -596,8 +609,8 @@ def api_wifi_mode():
             return jsonify({"success": False,
                             "error": "SSID required"}), 400
 
-        settings["wifi_mode"]      = "client"
-        settings["client_ssid"]    = ssid
+        settings["wifi_mode"]       = "client"
+        settings["client_ssid"]     = ssid
         settings["client_password"] = password
         save_settings(settings)
 
@@ -648,7 +661,7 @@ def api_service_status():
         except Exception:
             return False
 
-    settings = load_settings()
+    settings  = load_settings()
     wifi_mode = settings.get("wifi_mode", "ap")
     ap_ssid   = settings.get("ap_ssid", "HF256-N0CALL")
     cl_ssid   = settings.get("client_ssid", "")
@@ -658,13 +671,13 @@ def api_service_status():
         "setup_complete": is_setup_complete(),
         "callsign": settings.get("callsign", "N0CALL"),
         "role":     settings.get("role", ""),
-        "hf256":          {"running": svc_active("hf256")},
-        "freedvtnc2":     {"running": svc_active("freedvtnc2")},
-        "rigctld":        {"running": svc_active("rigctld")},
-        "portal":         {"running": svc_active("hf256-portal")},
+        "hf256":      {"running": svc_active("hf256")},
+        "freedvtnc2": {"running": svc_active("freedvtnc2")},
+        "rigctld":    {"running": svc_active("rigctld")},
+        "portal":     {"running": svc_active("hf256-portal")},
         "wifi": {
-            "mode":    wifi_mode,
-            "ssid":    ssid_disp,
+            "mode":       wifi_mode,
+            "ssid":       ssid_disp,
             "ap_running": svc_active("hostapd")
         }
     })
@@ -854,5 +867,515 @@ def captive_portal():
     return redirect(url_for("index"))
 
 
+# ------------------------------------------------------------------ #
+# Console — WebSocket session
+# ------------------------------------------------------------------ #
+
+# ── Hub wire format constants (from project files chat.py) ────────
+# Wire: [version:1][flags:1][msg_type:1][timestamp:4][iv:12][payload]
+# These must match the hub's chat.py exactly.
+_HUB_VERSION       = 0x01
+_HUB_FLAG_ENC      = 0x01
+_HUB_TYPE_CHAT     = 0x01
+_HUB_TYPE_AUTH_REQ = 0x10
+_HUB_TYPE_AUTH_RSP = 0x11
+_HUB_TYPE_FL_REQ   = 0x02
+_HUB_TYPE_FL_RSP   = 0x03
+_HUB_TYPE_FILE_DATA= 0x04
+_HUB_TYPE_STORE    = 0x12
+_HUB_TYPE_RETRIEVE = 0x13
+_HUB_TYPE_DL_REQ   = 0x06
+_HUB_TYPE_COMPLETE = 0x07
+_HUB_TYPE_ERROR    = 0x08
+
+
+def _chat_payload(sender: str, text: str) -> bytes:
+    """Binary chat payload: [sender_len:2][sender][text]"""
+    import struct
+    sender_bytes = sender.encode('utf-8')
+    return struct.pack(">H", len(sender_bytes)) + sender_bytes + text.encode('utf-8')
+
+
+
+    """
+    Return (aesgcm, key) using the portal's network.key file, or None.
+    Uses hub wire format: encrypt returns (nonce, ciphertext) separately.
+    """
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        if KEY_FILE.exists():
+            key = KEY_FILE.read_bytes()
+            if len(key) == 32:
+                return AESGCM(key), key
+    except Exception as e:
+        app.logger.info("Console: crypto load error: %s", e)
+    return None, None
+
+
+def _hub_crypto():
+    """
+    Return (aesgcm, key) using the portal's network.key file, or (None, None).
+    """
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        if KEY_FILE.exists():
+            key = KEY_FILE.read_bytes()
+            if len(key) == 32:
+                return AESGCM(key), key
+    except Exception as e:
+        pass
+    return None, None
+
+
+def _hub_pack(msg_type: int, payload: bytes, encrypt: bool = True) -> bytes:
+    """
+    Pack a message in the hub's wire format:
+    [version:1][flags:1][msg_type:1][timestamp:4][iv:12][payload+tag]
+
+    AAD = first 7 bytes (version+flags+type+timestamp).
+    """
+    import struct, os, time
+    aesgcm, key = _hub_crypto() if encrypt else (None, None)
+
+    flags     = _HUB_FLAG_ENC if (aesgcm and encrypt) else 0x00
+    timestamp = int(time.time())
+    aad       = struct.pack(">BBBI", _HUB_VERSION, flags, msg_type, timestamp)
+
+    if aesgcm and encrypt:
+        iv         = os.urandom(12)
+        ciphertext = aesgcm.encrypt(iv, payload, aad)
+        return aad + iv + ciphertext
+    else:
+        dummy_iv = b"\x00" * 12
+        return aad + dummy_iv + payload
+
+
+def _hub_unpack(data: bytes) -> tuple:
+    """
+    Unpack a hub wire format message.
+    Returns (msg_type, payload, encrypted) or raises ValueError.
+    Wire: [version:1][flags:1][msg_type:1][timestamp:4][iv:12][payload]
+    """
+    import struct
+    if len(data) < 19:
+        raise ValueError(f"Message too short: {len(data)} bytes")
+
+    version  = data[0]
+    flags    = data[1]
+    msg_type = data[2]
+    iv       = data[7:19]
+    body     = data[19:]
+    encrypted = bool(flags & _HUB_FLAG_ENC)
+
+    if encrypted:
+        aesgcm, key = _hub_crypto()
+        if aesgcm:
+            aad = data[0:7]
+            try:
+                payload = aesgcm.decrypt(iv, body, aad)
+            except Exception as e:
+                raise ValueError(f"Decryption failed: {e}")
+        else:
+            # No key — cannot decrypt
+            raise ValueError("Encrypted message but no key configured")
+    else:
+        payload = body
+
+    return msg_type, payload, encrypted
+
+
+class ConsoleSession:
+    """
+    Manages one browser WebSocket connection for the Console page.
+    Bridges browser commands to the HF-256 hub via TCP transport.
+    Uses the hub's wire format directly (project files chat.py format).
+
+    Thread safety: background TCP threads call send() which enqueues
+    messages on _send_q. A dedicated sender thread (started by
+    console_ws) drains the queue and calls ws.send(). The main thread
+    only calls ws.receive(). simple-websocket 1.1.0 supports concurrent
+    send/receive from separate threads.
+    """
+
+    def __init__(self, ws):
+        self.ws             = ws
+        self.settings       = load_settings()
+        self.mycall         = self.settings.get("callsign", "N0CALL").upper()
+        self.enc_enabled    = self.settings.get("encryption_enabled", True)
+        self.transport      = None
+        self.transport_mode = "tcp"
+        self._lock          = threading.Lock()   # protects self.transport
+        self._send_q        = queue.Queue()      # outbound messages for sender thread
+
+    # ── Browser helpers ───────────────────────────────────────────
+
+    def send(self, obj: dict):
+        """Queue a JSON message for delivery to the browser."""
+        self._send_q.put(json.dumps(obj))
+
+    def sys_msg(self, text: str):
+        self.send({"type": "system", "text": text})
+
+    # ── Transport ─────────────────────────────────────────────────
+
+    def _connect_tcp(self, host: str, port: int):
+        """Connect to HF-256 hub via TCP. Runs in a daemon thread."""
+        try:
+            from hf256.tcp_transport import TCPTransport
+
+            with self._lock:
+                if self.transport:
+                    self.transport.close()
+                    self.transport = None
+
+            t = TCPTransport(mycall=self.mycall, mode="client",
+                             host=host, port=port)
+            t.on_state_change     = self._on_state_change
+            t.on_message_received = self._on_message_received
+            t.on_ptt_change       = lambda x: None
+
+            with self._lock:
+                self.transport = t
+
+            ok = t.connect()
+            if not ok:
+                self.send({"type": "error",
+                           "text": f"Connection to {host}:{port} failed"})
+                self.send({"type": "disconnected"})
+
+        except Exception as e:
+            self.send({"type": "error", "text": f"Connect error: {e}"})
+            self.send({"type": "disconnected"})
+
+    def _on_state_change(self, old_state, new_state, trigger=None):
+        if new_state == 2:
+            remote = getattr(self.transport, "remote_call", None)
+            self.send({"type": "connected", "remote_call": remote or "HUB"})
+        elif new_state == 1:
+            self.send({"type": "connecting"})
+        elif new_state == 0:
+            self.send({"type": "disconnected"})
+
+    def _on_message_received(self, data: bytes):
+        """
+        Data from hub after Pi's TCPTransport._read_loop strips the
+        4-byte length prefix. Hub send_message builds [prefix][wire]
+        and calls send_data which sends as-is (no extra prefix).
+        So we receive bare wire bytes ready for HF256Message.unpack.
+        """
+        import json as _json
+
+        app.logger.info("Console RX: %d bytes", len(data))
+
+        try:
+            msg_type, payload, encrypted = _hub_unpack(data)
+        except Exception as e:
+            app.logger.info("Console RX unpack error: %s | hex=%s",
+                            e, data[:32].hex())
+            return
+
+        app.logger.info("Console RX: type=0x%02x encrypted=%s payload=%d bytes",
+                        msg_type, encrypted, len(payload))
+
+        if msg_type == _HUB_TYPE_CHAT:
+            # Binary format: [sender_len:2][sender][text]
+            try:
+                import struct as _struct
+                sender_len = _struct.unpack(">H", payload[0:2])[0]
+                sender = payload[2:2+sender_len].decode('utf-8', errors='replace')
+                text   = payload[2+sender_len:].decode('utf-8', errors='replace')
+                self.send({"type": "chat", "sender": sender, "text": text})
+            except Exception as e:
+                app.logger.info("Console RX chat parse error: %s", e)
+
+        elif msg_type == _HUB_TYPE_AUTH_RSP:
+            # JSON: {"success": bool, "message": str}
+            try:
+                import json as _json
+                obj = _json.loads(payload.decode())
+                if obj.get("success"):
+                    self.send({"type": "auth_ok"})
+                    if obj.get("message"):
+                        self.sys_msg(obj["message"])
+                else:
+                    self.send({"type": "auth_fail",
+                               "reason": obj.get("message", "rejected")})
+            except Exception as e:
+                app.logger.info("Console RX auth_rsp parse error: %s", e)
+
+        elif msg_type == _HUB_TYPE_FL_RSP:
+            # JSON: the files dict directly (no wrapping key)
+            try:
+                import json as _json
+                files = _json.loads(payload.decode())
+                self.send({"type": "file_list", "files": files})
+            except Exception as e:
+                app.logger.info("Console RX file_list parse error: %s", e)
+
+        elif msg_type == _HUB_TYPE_FILE_DATA:
+            # Binary: [filename_len:2][filename][chunk_num:4][total_chunks:4][hash_len:2][hash][data]
+            try:
+                import struct as _struct
+                offset = 0
+                fn_len = _struct.unpack(">H", payload[offset:offset+2])[0]; offset += 2
+                filename = payload[offset:offset+fn_len].decode('utf-8'); offset += fn_len
+                chunk_num, total_chunks = _struct.unpack(">II", payload[offset:offset+8]); offset += 8
+                hash_len = _struct.unpack(">H", payload[offset:offset+2])[0]; offset += 2
+                offset += hash_len  # skip hash
+                chunk_data = payload[offset:]
+                self.send({
+                    "type":     "download_progress",
+                    "filename": filename,
+                    "progress": round((chunk_num + 1) / total_chunks, 3),
+                    "done":     chunk_num + 1,
+                    "total":    total_chunks,
+                    "data":     chunk_data.hex()
+                })
+            except Exception as e:
+                app.logger.info("Console RX file_data parse error: %s", e)
+
+        elif msg_type == _HUB_TYPE_COMPLETE:
+            # JSON: {"filename": str, "success": bool, "message": str}
+            try:
+                import json as _json
+                obj = _json.loads(payload.decode())
+                self.send({"type":     "download_complete",
+                           "filename": obj.get("filename", ""),
+                           "success":  obj.get("success", False)})
+            except Exception as e:
+                app.logger.info("Console RX complete parse error: %s", e)
+
+        elif msg_type == _HUB_TYPE_ERROR:
+            # JSON: {"filename": str, "error": str}
+            try:
+                import json as _json
+                obj = _json.loads(payload.decode())
+                self.send({"type": "error",
+                           "text": f"File error: {obj.get('error', '?')}"})
+            except Exception as e:
+                app.logger.info("Console RX error parse error: %s", e)
+
+        else:
+            app.logger.info("Console RX: unhandled type 0x%02x", msg_type)
+
+    # ── Send ──────────────────────────────────────────────────────
+
+    def _send_hub(self, msg_type: int, payload: bytes) -> bool:
+        """
+        Pack in hub wire format and send with inner 4-byte prefix.
+        send_data() adds the outer prefix automatically.
+        """
+        import struct
+
+        with self._lock:
+            transport = self.transport
+
+        if transport is None or transport.state != 2:
+            self.sys_msg("✗ Not connected to hub")
+            return False
+
+        wire        = _hub_pack(msg_type, payload, encrypt=self.enc_enabled)
+        app.logger.info("Console TX: type=0x%02x wire=%d bytes",
+                        msg_type, len(wire))
+        # Pi's send_data adds a 4-byte length prefix.
+        # Hub's _read_loop strips that prefix and passes bare wire
+        # to _on_vara_message which calls HF256Message.unpack directly
+        # (no inner prefix for TCP mode).
+        return transport.send_data(wire)
+
+    # ── Browser command dispatcher ────────────────────────────────
+
+    def dispatch(self, msg: dict):
+        mtype = msg.get("type", "")
+        app.logger.info("Console dispatch: %s", mtype)
+
+        if mtype == "hello":
+            call = msg.get("call", "").strip().upper()
+            if call:
+                self.mycall = call
+            self.enc_enabled = bool(msg.get("encrypt", self.enc_enabled))
+            _, key = _hub_crypto()
+            status = "key loaded" if key else "NO KEY — plaintext only"
+            self.sys_msg(f"Session ready — {self.mycall} — {status}")
+
+        elif mtype == "set_transport":
+            self.transport_mode = msg.get("transport", "tcp")
+
+        elif mtype == "set_encrypt":
+            self.enc_enabled = bool(msg.get("enabled", True))
+
+        elif mtype == "connect":
+            host = msg.get("host", "127.0.0.1")
+            port = int(msg.get("port", 14256))
+            self.send({"type": "connecting"})
+            threading.Thread(target=self._connect_tcp,
+                             args=(host, port), daemon=True).start()
+
+        elif mtype == "disconnect":
+            with self._lock:
+                if self.transport:
+                    # shutdown() sends TCP FIN immediately so the hub's
+                    # _read_loop detects the disconnect right away
+                    import socket as _socket
+                    try:
+                        if self.transport.client_socket:
+                            self.transport.client_socket.shutdown(
+                                _socket.SHUT_RDWR)
+                    except Exception:
+                        pass
+                    self.transport.close()
+                    self.transport = None
+            self.send({"type": "disconnected"})
+
+        elif mtype == "chat":
+            text = msg.get("text", "").strip()
+            if text:
+                self._send_hub(_HUB_TYPE_CHAT, _chat_payload(self.mycall, text))
+
+        elif mtype == "auth":
+            password = msg.get("password", "")
+            payload = json.dumps(
+                {"callsign": self.mycall, "password": password}
+            ).encode()
+            self._send_hub(_HUB_TYPE_AUTH_REQ, payload)
+
+        elif mtype == "send":
+            to   = msg.get("to", "").upper()
+            text = msg.get("text", "")
+            if to and text:
+                import struct as _struct
+                # Inner chat wire (hub binary format)
+                inner_wire = _hub_pack(_HUB_TYPE_CHAT,
+                                       _chat_payload(self.mycall, text),
+                                       encrypt=self.enc_enabled)
+                # StoreMessage binary: [recipient_len:2][recipient][inner_wire]
+                recip_bytes = to.encode('utf-8')
+                store_payload = _struct.pack(">H", len(recip_bytes)) + recip_bytes + inner_wire
+                self._send_hub(_HUB_TYPE_STORE, store_payload)
+
+        elif mtype == "retrieve":
+            self._send_hub(_HUB_TYPE_RETRIEVE, b"{}")
+
+        elif mtype == "files":
+            self._send_hub(_HUB_TYPE_FL_REQ, b"{}")
+
+        elif mtype == "download":
+            filename = msg.get("filename", "")
+            if filename:
+                payload = json.dumps({"filename": filename}).encode()
+                self._send_hub(_HUB_TYPE_DL_REQ, payload)
+
+        elif mtype == "cancel":
+            self.sys_msg("Cancel requested — transfer will time out")
+
+        elif mtype == "bulletin":
+            text = msg.get("text", "")
+            if text:
+                self._send_hub(_HUB_TYPE_CHAT,
+                               _chat_payload(self.mycall, f"/bul {text}"))
+
+        elif mtype == "adduser":
+            call = msg.get("call", "").upper()
+            pw   = msg.get("password", "")
+            if call and pw:
+                self._send_hub(_HUB_TYPE_CHAT,
+                               _chat_payload(self.mycall, f"/adduser {call} {pw}"))
+
+        elif mtype == "listusers":
+            self._send_hub(_HUB_TYPE_CHAT, _chat_payload(self.mycall, "/listusers"))
+
+        elif mtype == "storage":
+            self._send_hub(_HUB_TYPE_CHAT, _chat_payload(self.mycall, "/storage"))
+
+        else:
+            app.logger.warning("Console: unknown msg type: %s", mtype)
+
+@sock.route("/console/ws")
+def console_ws(ws):
+    """
+    WebSocket endpoint for the Console page.
+
+    Architecture:
+    - Main thread: blocks on ws.receive() waiting for browser commands
+    - Background threads (TCP callbacks): call session.send() which
+      queues messages
+    - A dedicated sender thread drains the queue and calls ws.send()
+
+    This keeps all ws.send() calls in one thread and all ws.receive()
+    calls in another — simple-websocket 1.1.0 supports this safely.
+    """
+    import simple_websocket
+
+    session = ConsoleSession(ws)
+    app.logger.info("Console WebSocket connected")
+
+    # Sender thread: drains the outbound queue
+    def sender():
+        while True:
+            item = session._send_q.get()
+            if item is None:           # None = sentinel, stop
+                break
+            try:
+                ws.send(item)
+            except Exception as e:
+                app.logger.info("Console ws.send error: %s", e)
+                break
+
+    sender_thread = threading.Thread(target=sender, daemon=True)
+    sender_thread.start()
+
+    try:
+        while True:
+            try:
+                raw = ws.receive()
+            except simple_websocket.ConnectionClosed:
+                break
+            if raw is None:
+                break
+            try:
+                session.dispatch(json.loads(raw))
+            except json.JSONDecodeError:
+                app.logger.warning("Console: invalid JSON from browser")
+            except Exception as e:
+                app.logger.error("Console dispatch error: %s", e,
+                                 exc_info=True)
+                session.sys_msg(f"Error: {e}")
+
+    finally:
+        # Stop sender thread
+        session._send_q.put(None)
+        sender_thread.join(timeout=2)
+
+        # Close transport with proper shutdown so hub detects disconnect
+        try:
+            with session._lock:
+                if session.transport:
+                    import socket as _socket
+                    try:
+                        if session.transport.client_socket:
+                            session.transport.client_socket.shutdown(
+                                _socket.SHUT_RDWR)
+                    except Exception:
+                        pass
+                    session.transport.close()
+        except Exception:
+            pass
+        app.logger.info("Console WebSocket closed")
+
+
+# ------------------------------------------------------------------ #
+# Entry point
+# ------------------------------------------------------------------ #
+
 if __name__ == "__main__":
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+        datefmt="%H:%M:%S"
+    )
+    # Promote Flask app logger and console logger to INFO
+    # so errors appear in journalctl without debug=True
+    app.logger.setLevel(logging.INFO)
+    logging.getLogger("hf256").setLevel(logging.INFO)
     app.run(host="0.0.0.0", port=80, debug=False)

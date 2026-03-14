@@ -289,7 +289,8 @@ PIP_PACKAGES=(
     adafruit-blinka
     adafruit-circuitpython-st7789
     adafruit-circuitpython-rgb-display
-    audioop-lts
+    flask-sock          # WebSocket support for console page
+    # audioop-lts removed: only needed for Python 3.13+, Pi uses 3.11 which has audioop built in
 )
 
 for pkg in "${PIP_PACKAGES[@]}"; do
@@ -329,16 +330,50 @@ run_chroot "pip3 install --break-system-packages \
     git+https://github.com/LFManifesto/freedvtnc2.git" \
     || warn "freedvtnc2 install failed - may need manual install"
 
-# Verify installation
-if run_chroot "python3 -m freedvtnc2 --help > /dev/null 2>&1"; then
-    ok "freedvtnc2 installed as Python module"
+# Verify installation - pip show is reliable in chroot; running the module
+# requires audio hardware which is not available during image build
+if run_chroot "pip3 show freedvtnc2 > /dev/null 2>&1"; then
+    ok "freedvtnc2 installed successfully"
 else
-    warn "freedvtnc2 binary not found - will need manual install"
+    warn "freedvtnc2 not found in pip - may need manual install"
 fi
 
 # ------------------------------------------------------------------ #
-# Create directory structure
+# Install ardopcf (ARDOP modem - pre-built arm64 binary)
+#
+# ARDOP (Amateur Radio Digital Open Protocol) is an open-source HF
+# and VHF-FM digital modem. HF-256 uses it as a radio transport for:
+#   - HF SSB operation  (connects to ports 8515/8516)
+#   - VHF FM operation  (ARDOP works over FM audio path;
+#                        FreeDV data modes do NOT - they require SSB)
+#
+# Pre-built binary from: https://github.com/pflarue/ardop/releases
+# File: ardopcf_arm_Linux_64  (placed in image/ alongside build.sh)
+# Installed to: /usr/local/bin/ardopc
+#
+# ARDOP port assignments used by hf256/ardop.py:
+#   8515 = command port
+#   8516 = data port
 # ------------------------------------------------------------------ #
+log "Installing ardopcf pre-built binary..."
+
+ARDOPCF_BIN="$SCRIPT_DIR/ardopcf_arm_Linux_64"
+
+if [ ! -f "$ARDOPCF_BIN" ]; then
+    err "ardopcf binary not found at $ARDOPCF_BIN
+    Download ardopcf_arm_Linux_64 from https://github.com/pflarue/ardop/releases
+    and place it in the image/ directory alongside build.sh"
+fi
+
+install -m 755 "$ARDOPCF_BIN" "$ROOT_MNT/usr/local/bin/ardopc"
+
+if [ -f "$ROOT_MNT/usr/local/bin/ardopc" ]; then
+    ok "ardopc installed to /usr/local/bin/ardopc"
+else
+    err "ardopc install failed - binary not found after copy"
+fi
+
+
 log "Creating HF-256 directory structure..."
 run_chroot "mkdir -p \
     /opt/hf256/hf256 \

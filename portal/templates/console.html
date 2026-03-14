@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HF-256 Console</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #2ea043;
+    --blue: #388bfd; --orange: #d29922; --red: #da3633;
+    --radius: 8px;
+    /* Console-specific */
+    --con-bg: #010409; --con-green: #3fb950; --con-cyan: #58a6ff;
+    --con-yellow: #e3b341; --con-dim: #6e7681; --con-sep: #1c2128;
+    --con-font: 'Courier New', 'Lucida Console', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.6;
+    /* Full-height layout so console fills viewport */
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  }
+
+  /* ── Navigation ─────────────────────────────────────────── */
+  .topbar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 8px 16px; display: flex; align-items: center;
+    gap: 8px; flex-shrink: 0; flex-wrap: wrap;
+  }
+  .nav-btn {
+    padding: 5px 13px; border-radius: 6px; text-decoration: none;
+    font-size: 0.85rem; border: 1px solid var(--border);
+    color: var(--text); background: var(--bg);
+  }
+  .nav-btn.active {
+    background: var(--blue); border-color: var(--blue); color: #fff;
+  }
+  .topbar-spacer { flex: 1; }
+
+  /* ── Status bar ─────────────────────────────────────────── */
+  #status-bar {
+    background: #0d1117; border-bottom: 1px solid var(--border);
+    padding: 4px 14px; display: flex; align-items: center;
+    gap: 0; flex-shrink: 0; flex-wrap: wrap;
+    font-family: var(--con-font); font-size: 12px;
+  }
+  .s-part { display: flex; align-items: center; }
+  .s-sep  { color: var(--border); margin: 0 8px; }
+  .s-call    { color: var(--con-cyan); font-weight: bold; }
+  .s-transport { color: var(--con-dim); }
+  .s-conn-ok   { color: var(--con-green); }
+  .s-conn-busy { color: var(--con-yellow); }
+  .s-conn-off  { color: var(--red); }
+  .s-enc-on  { color: var(--con-green); }
+  .s-enc-off { color: var(--red); }
+  .s-auth-ok { color: var(--con-green); }
+  .s-auth-no { color: var(--con-yellow); }
+  .s-ws-ok   { color: var(--con-green); }
+  .s-ws-off  { color: var(--red); }
+
+  /* ── Main layout ────────────────────────────────────────── */
+  #main {
+    flex: 1; display: flex; overflow: hidden;
+  }
+
+  /* ── Message area ───────────────────────────────────────── */
+  #console-wrap {
+    flex: 1; display: flex; flex-direction: column;
+    border-right: 1px solid var(--border); overflow: hidden;
+  }
+  #console-out {
+    flex: 1; overflow-y: auto; padding: 8px 12px;
+    background: var(--con-bg);
+    font-family: var(--con-font); font-size: 13px;
+    scroll-behavior: smooth;
+  }
+  #console-out::-webkit-scrollbar { width: 6px; }
+  #console-out::-webkit-scrollbar-track { background: var(--con-bg); }
+  #console-out::-webkit-scrollbar-thumb {
+    background: var(--border); border-radius: 3px;
+  }
+
+  /* Message rows */
+  .msg { line-height: 1.55; margin-bottom: 1px;
+         white-space: pre-wrap; word-break: break-word; }
+  .msg-ts   { color: var(--con-dim); }
+  .msg-star { color: var(--con-yellow); }
+  .msg-sys  { color: var(--con-dim); font-style: italic; }
+  .msg-sep  {
+    color: #1a2a1a; font-size: 11px; margin: 2px 0;
+    user-select: none;
+  }
+  .msg-out .msg-arrow { color: var(--con-cyan); }
+  .msg-out .msg-call  { color: var(--con-cyan); }
+  .msg-in  .msg-arrow { color: var(--con-green); }
+  .msg-in  .msg-call  { color: var(--con-green); }
+
+  /* ── Input bar ──────────────────────────────────────────── */
+  #input-bar {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    padding: 7px 10px; display: flex; align-items: center; gap: 8px;
+    flex-shrink: 0;
+  }
+  #input-prompt {
+    font-family: var(--con-font); color: var(--con-green);
+    font-weight: bold; font-size: 13px; flex-shrink: 0;
+  }
+  #msg-input {
+    flex: 1; background: transparent; border: none;
+    color: var(--text); font-family: var(--con-font);
+    font-size: 13px; outline: none;
+  }
+  #msg-input::placeholder { color: var(--con-dim); }
+  #send-btn {
+    padding: 4px 12px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 5px;
+    color: var(--text); font-size: 0.82rem; cursor: pointer;
+    flex-shrink: 0;
+  }
+  #send-btn:hover { border-color: var(--blue); }
+
+  /* ── Sidebar ────────────────────────────────────────────── */
+  #sidebar {
+    width: 190px; flex-shrink: 0;
+    background: var(--surface);
+    display: flex; flex-direction: column;
+    padding: 10px 8px; gap: 0; overflow-y: auto;
+  }
+  .sb-section {
+    border: 1px solid var(--border); border-radius: 5px;
+    padding: 8px; margin-bottom: 8px;
+  }
+  .sb-title {
+    font-size: 10px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.07em;
+    margin-bottom: 7px; padding-bottom: 5px;
+    border-bottom: 1px solid var(--border);
+  }
+  /* Transport buttons */
+  .t-btn {
+    display: block; width: 100%;
+    background: transparent; border: 1px solid var(--border);
+    border-radius: 4px; color: var(--muted);
+    font-family: var(--con-font); font-size: 11px;
+    padding: 5px 7px; text-align: left;
+    cursor: pointer; margin-bottom: 4px;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .t-btn:last-child { margin-bottom: 0; }
+  .t-btn:hover { background: #1c2128; color: var(--text); }
+  .t-btn.active {
+    background: #0d2137; border-color: var(--blue);
+    color: var(--con-cyan);
+  }
+  /* Connection info */
+  .sb-info {
+    font-family: var(--con-font); font-size: 11px;
+    line-height: 1.8; color: var(--con-dim);
+  }
+  .sb-info .lbl { color: var(--con-yellow); }
+  /* Quick commands */
+  .qcmd {
+    font-family: var(--con-font); font-size: 11px;
+    color: var(--con-cyan); cursor: pointer;
+    padding: 2px 0; line-height: 1.9;
+    display: block;
+  }
+  .qcmd:hover { color: var(--blue); }
+
+  /* ── Help panel ─────────────────────────────────────────── */
+  #help-panel {
+    display: none;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 12px;
+    font-family: var(--con-font); font-size: 12px;
+    line-height: 1.75; margin: 6px 12px 0;
+  }
+  #help-panel .h-title {
+    color: var(--text); font-weight: bold; margin-bottom: 6px;
+  }
+  #help-panel .h-cmd  { color: var(--con-cyan); }
+  #help-panel .h-desc { color: var(--con-dim); }
+  #help-panel .h-sect {
+    color: var(--con-dim); margin-top: 8px; margin-bottom: 2px;
+  }
+
+  /* ── Footer hint ────────────────────────────────────────── */
+  #footer {
+    background: var(--surface); border-top: 1px solid var(--border);
+    padding: 3px 14px; display: flex; justify-content: space-between;
+    font-size: 10px; color: var(--con-dim); flex-shrink: 0;
+  }
+  kbd {
+    background: #21262d; border: 1px solid var(--border);
+    border-radius: 3px; padding: 0 4px; color: var(--text);
+    font-family: var(--con-font);
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Navigation bar ─────────────────────────────────────── -->
+<div class="topbar">
+  <a class="nav-btn" href="/status">Status</a>
+  <a class="nav-btn" href="/settings">Settings</a>
+  <a class="nav-btn active" href="/console">Console</a>
+  <div class="topbar-spacer"></div>
+  <span id="ws-badge" style="font-size:11px;color:var(--red)">
+    ⬤ Not connected
+  </span>
+</div>
+
+<!-- ── Status bar ──────────────────────────────────────────── -->
+<div id="status-bar">
+  <span class="s-part s-call"  id="s-call">{{ settings.callsign or "N0CALL" }}</span>
+  <span class="s-sep">│</span>
+  <span class="s-part s-transport" id="s-transport">TCP</span>
+  <span class="s-sep">│</span>
+  <span class="s-part s-conn-off"  id="s-conn">⬤ Disconnected</span>
+  <span class="s-sep">│</span>
+  <span class="s-part" id="s-enc"
+    class="{{ 's-enc-on' if settings.encryption_enabled else 's-enc-off' }}">
+    {{ '🔒 Encrypted' if settings.encryption_enabled else '🔓 Plaintext' }}
+  </span>
+  <span class="s-sep">│</span>
+  <span class="s-part s-auth-no" id="s-auth">? Auth</span>
+  <span class="s-sep">│</span>
+  <span class="s-part s-ws-off"   id="s-ws">⬤ WS</span>
+</div>
+
+<!-- ── Main area ───────────────────────────────────────────── -->
+<div id="main">
+
+  <!-- Console output + input -->
+  <div id="console-wrap">
+    <div id="console-out"></div>
+
+    <!-- Help panel sits above input, inside console-wrap -->
+    <div id="help-panel">
+      <div class="h-title">Available Commands</div>
+      <div><span class="h-cmd">/connect &lt;IP&gt; [port]</span>
+           &nbsp;<span class="h-desc">Connect to hub via TCP</span></div>
+      <div><span class="h-cmd">/disconnect</span>
+           &nbsp;<span class="h-desc">Disconnect from hub</span></div>
+      <div><span class="h-cmd">/auth &lt;password&gt;</span>
+           &nbsp;<span class="h-desc">Authenticate with hub</span></div>
+      <div><span class="h-cmd">/send &lt;CALL&gt; &lt;message&gt;</span>
+           &nbsp;<span class="h-desc">Store message for offline station</span></div>
+      <div><span class="h-cmd">/retrieve</span>
+           &nbsp;<span class="h-desc">Retrieve stored messages from hub</span></div>
+      <div><span class="h-cmd">/bul &lt;message&gt;</span>
+           &nbsp;<span class="h-desc">Send bulletin to all stations</span></div>
+      <div><span class="h-cmd">/files</span>
+           &nbsp;<span class="h-desc">List files available on hub</span></div>
+      <div><span class="h-cmd">/download &lt;filename&gt;</span>
+           &nbsp;<span class="h-desc">Download file from hub</span></div>
+      <div><span class="h-cmd">/cancel</span>
+           &nbsp;<span class="h-desc">Cancel current file download</span></div>
+      <div><span class="h-cmd">/whoami</span>
+           &nbsp;<span class="h-desc">Show callsign and connection status</span></div>
+      <div><span class="h-cmd">/encrypt on|off</span>
+           &nbsp;<span class="h-desc">Toggle encryption</span></div>
+      <div><span class="h-cmd">/help</span>
+           &nbsp;<span class="h-desc">Toggle this help panel</span></div>
+      <div class="h-sect">Hub operator commands:</div>
+      <div><span class="h-cmd">/adduser &lt;CALL&gt; &lt;pw&gt;</span>
+           &nbsp;<span class="h-desc">Add user to hub</span></div>
+      <div><span class="h-cmd">/listusers</span>
+           &nbsp;<span class="h-desc">List registered hub users</span></div>
+      <div><span class="h-cmd">/storage</span>
+           &nbsp;<span class="h-desc">Show hub message storage stats</span></div>
+    </div>
+
+    <div id="input-bar">
+      <span id="input-prompt">hf256&gt;</span>
+      <input id="msg-input" type="text"
+             placeholder="Type message or /help for commands"
+             autocomplete="off" spellcheck="false" />
+      <button id="send-btn" onclick="submitInput()">Send</button>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+
+    <!-- Transport selector -->
+    <div class="sb-section">
+      <div class="sb-title">Transport</div>
+      <button class="t-btn active" id="t-tcp"
+              onclick="selectTransport('tcp')">
+        ◉ TCP / Internet
+      </button>
+      <button class="t-btn" id="t-freedv"
+              onclick="selectTransport('freedv')">
+        ○ FreeDV HF
+      </button>
+      <button class="t-btn" id="t-ardop-hf"
+              onclick="selectTransport('ardop-hf')">
+        ○ ARDOP HF
+      </button>
+      <button class="t-btn" id="t-ardop-fm"
+              onclick="selectTransport('ardop-fm')">
+        ○ ARDOP VHF-FM
+      </button>
+    </div>
+
+    <!-- Connection info -->
+    <div class="sb-section">
+      <div class="sb-title">Connection</div>
+      <div class="sb-info">
+        <div><span class="lbl">Hub: </span><span id="sb-hub">—</span></div>
+        <div><span class="lbl">Port:</span><span id="sb-port"> —</span></div>
+        <div><span class="lbl">Role:</span>
+          <span id="sb-role">
+            {{ settings.role|upper if settings.role else ' —' }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick commands -->
+    <div class="sb-section">
+      <div class="sb-title">Quick Commands</div>
+      <span class="qcmd" onclick="fillInput('/connect ')">/connect</span>
+      <span class="qcmd" onclick="fillInput('/auth ')">/auth</span>
+      <span class="qcmd" onclick="fillInput('/retrieve')">/retrieve</span>
+      <span class="qcmd" onclick="fillInput('/files')">/files</span>
+      <span class="qcmd" onclick="fillInput('/send ')">/send</span>
+      <span class="qcmd" onclick="fillInput('/bul ')">/bul</span>
+      <span class="qcmd" onclick="fillInput('/download ')">/download</span>
+      <span class="qcmd" onclick="fillInput('/whoami')">/whoami</span>
+      <span class="qcmd" onclick="fillInput('/disconnect')">/disconnect</span>
+      <span class="qcmd" onclick="toggleHelp()">/help</span>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Footer ──────────────────────────────────────────────── -->
+<div id="footer">
+  <span>
+    <kbd>Enter</kbd> Send &nbsp;
+    <kbd>↑</kbd><kbd>↓</kbd> History &nbsp;
+    <kbd>Ctrl+H</kbd> Help
+  </span>
+  <span>HF-256 v{{ system_info.version or '2.0.0' }}
+    &bull; {{ system_info.hostname }}</span>
+</div>
+
+<script>
+// ================================================================
+// State
+// ================================================================
+const ST = {
+  mycall:        "{{ settings.callsign or 'N0CALL' }}",
+  role:          "{{ settings.role or '' }}",
+  hubAddress:    "{{ settings.hub_address or '' }}",
+  encEnabled:    {{ 'true' if settings.encryption_enabled else 'false' }},
+  transport:     "tcp",
+  connState:     0,   // 0=off 1=connecting 2=connected
+  remoteCall:    null,
+  authenticated: false,
+  helpVisible:   false,
+  ws:            null,
+  wsRetryTimer:  null,
+  history:       [],
+  histIdx:       -1
+};
+
+// ================================================================
+// Helpers
+// ================================================================
+function ts() {
+  return new Date().toLocaleTimeString("en-US",
+    {hour:"2-digit", minute:"2-digit", hour12:false});
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+const out = document.getElementById("console-out");
+
+function scrollDown() {
+  out.scrollTop = out.scrollHeight;
+}
+
+function addSys(text) {
+  const d = document.createElement("div");
+  d.className = "msg";
+  d.innerHTML =
+    `<span class="msg-ts">${ts()}</span> ` +
+    `<span class="msg-star">★</span> ` +
+    `<span class="msg-sys">${esc(text)}</span>`;
+  out.appendChild(d);
+  scrollDown();
+}
+
+function addMsg(sender, text, outgoing) {
+  if (!outgoing) {
+    const sep = document.createElement("div");
+    sep.className = "msg msg-sep";
+    sep.textContent = "/".repeat(56);
+    out.appendChild(sep);
+  }
+  const d = document.createElement("div");
+  d.className = "msg " + (outgoing ? "msg-out" : "msg-in");
+  const arrow = outgoing ? "→" : "←";
+  d.innerHTML =
+    `<span class="msg-ts">${ts()}</span> ` +
+    `<span class="msg-arrow">${arrow}</span> ` +
+    `<span class="msg-call">${esc(sender)}:</span> ${esc(text)}`;
+  out.appendChild(d);
+  scrollDown();
+}
+
+// ================================================================
+// Status bar
+// ================================================================
+function updateStatus() {
+  document.getElementById("s-call").textContent = ST.mycall;
+
+  const tLabels = {
+    "tcp":      "TCP",
+    "freedv":   "FreeDV",
+    "ardop-hf": "ARDOP HF",
+    "ardop-fm": "ARDOP VHF-FM"
+  };
+  document.getElementById("s-transport").textContent =
+    tLabels[ST.transport] || "TCP";
+
+  const connEl = document.getElementById("s-conn");
+  if (ST.connState === 2) {
+    connEl.className = "s-part s-conn-ok";
+    connEl.textContent = "⬤ " + (ST.remoteCall || "?");
+  } else if (ST.connState === 1) {
+    connEl.className = "s-part s-conn-busy";
+    connEl.textContent = "⬤ Connecting...";
+  } else {
+    connEl.className = "s-part s-conn-off";
+    connEl.textContent = "⬤ Disconnected";
+  }
+
+  const encEl = document.getElementById("s-enc");
+  if (ST.encEnabled) {
+    encEl.className = "s-part s-enc-on";
+    encEl.textContent = "🔒 Encrypted";
+  } else {
+    encEl.className = "s-part s-enc-off";
+    encEl.textContent = "🔓 Plaintext";
+  }
+
+  const authEl = document.getElementById("s-auth");
+  if (ST.authenticated) {
+    authEl.className = "s-part s-auth-ok";
+    authEl.textContent = "✓ Auth";
+  } else {
+    authEl.className = "s-part s-auth-no";
+    authEl.textContent = "? Auth";
+  }
+
+  document.getElementById("sb-hub").textContent =
+    ST.remoteCall || (ST.hubAddress || "—");
+  document.getElementById("sb-port").textContent = " 14256";
+}
+
+// ================================================================
+// Transport selector
+// ================================================================
+const T_IDS = ["t-tcp","t-freedv","t-ardop-hf","t-ardop-fm"];
+const T_LABELS = {
+  "tcp":      "◉ TCP / Internet",
+  "freedv":   "◉ FreeDV HF",
+  "ardop-hf": "◉ ARDOP HF",
+  "ardop-fm": "◉ ARDOP VHF-FM"
+};
+const T_INACTIVE = {
+  "tcp":      "○ TCP / Internet",
+  "freedv":   "○ FreeDV HF",
+  "ardop-hf": "○ ARDOP HF",
+  "ardop-fm": "○ ARDOP VHF-FM"
+};
+
+function selectTransport(t) {
+  ST.transport = t;
+  T_IDS.forEach(id => {
+    const key = id.replace("t-","");
+    const btn = document.getElementById(id);
+    if (key === t) {
+      btn.className = "t-btn active";
+      btn.textContent = T_LABELS[key];
+    } else {
+      btn.className = "t-btn";
+      btn.textContent = T_INACTIVE[key];
+    }
+  });
+  const labels = {
+    "tcp":      "TCP/Internet",
+    "freedv":   "FreeDV HF",
+    "ardop-hf": "ARDOP HF",
+    "ardop-fm": "ARDOP VHF-FM"
+  };
+  addSys("Transport: " + labels[t]);
+  if (t !== "tcp") {
+    addSys("Note: " + labels[t] +
+           " transport — ensure modem service is running");
+  }
+  updateStatus();
+  wsSend({type:"set_transport", transport: t});
+}
+
+// ================================================================
+// WebSocket — connects to /console/ws on the same Flask server
+// ================================================================
+function wsConnect() {
+  if (ST.ws && ST.ws.readyState <= 1) return;
+
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const url   = proto + "://" + location.host + "/console/ws";
+
+  ST.ws = new WebSocket(url);
+
+  ST.ws.onopen = function() {
+    document.getElementById("ws-badge").textContent = "⬤ Connected";
+    document.getElementById("ws-badge").style.color = "var(--con-green)";
+    document.getElementById("s-ws").textContent = "⬤ WS";
+    document.getElementById("s-ws").className   = "s-part s-ws-ok";
+    addSys("Console connected");
+    // Tell server our current state
+    wsSend({type:"hello", call: ST.mycall,
+            transport: ST.transport,
+            encrypt: ST.encEnabled});
+  };
+
+  ST.ws.onmessage = function(evt) {
+    try { handleWsMsg(JSON.parse(evt.data)); }
+    catch(e) { console.error("WS parse error", e); }
+  };
+
+  ST.ws.onclose = function() {
+    document.getElementById("ws-badge").textContent = "⬤ Disconnected";
+    document.getElementById("ws-badge").style.color = "var(--red)";
+    document.getElementById("s-ws").className   = "s-part s-ws-off";
+    document.getElementById("s-ws").textContent = "⬤ WS";
+    if (ST.connState !== 0) {
+      ST.connState = 0; ST.remoteCall = null;
+      ST.authenticated = false; updateStatus();
+      addSys("Connection lost — WebSocket closed");
+    }
+    // Auto-reconnect after 5s
+    ST.wsRetryTimer = setTimeout(wsConnect, 5000);
+  };
+
+  ST.ws.onerror = function() {
+    document.getElementById("ws-badge").style.color = "var(--red)";
+  };
+}
+
+function wsSend(obj) {
+  if (ST.ws && ST.ws.readyState === 1) {
+    ST.ws.send(JSON.stringify(obj));
+    return true;
+  }
+  return false;
+}
+
+// ================================================================
+// Incoming WebSocket message dispatcher
+// ================================================================
+function handleWsMsg(msg) {
+  switch(msg.type) {
+
+    case "connected":
+      ST.connState  = 2;
+      ST.remoteCall = msg.remote_call || null;
+      updateStatus();
+      addSys("✓ Connected to " + (msg.remote_call || "hub"));
+      break;
+
+    case "connecting":
+      ST.connState = 1; updateStatus();
+      break;
+
+    case "disconnected":
+      ST.connState = 0; ST.remoteCall = null;
+      ST.authenticated = false; updateStatus();
+      addSys("Disconnected");
+      break;
+
+    case "chat":
+      addMsg(msg.sender, msg.text, false);
+      break;
+
+    case "system":
+      addSys(msg.text);
+      break;
+
+    case "auth_ok":
+      ST.authenticated = true; updateStatus();
+      addSys("✓ Authenticated");
+      break;
+
+    case "auth_fail":
+      addSys("✗ Auth failed: " + (msg.reason || "invalid password"));
+      break;
+
+    case "file_list":
+      displayFileList(msg.files || {});
+      break;
+
+    case "download_progress":
+      addSys("↓ " + msg.filename + ": " +
+             Math.round(msg.progress * 100) + "% " +
+             "(" + msg.done + "/" + msg.total + " chunks)");
+      break;
+
+    case "download_complete":
+      addSys("✓ Download complete: " + msg.filename);
+      break;
+
+    case "error":
+      addSys("✗ " + (msg.text || "Unknown error"));
+      break;
+
+    default:
+      addSys("[server] " + JSON.stringify(msg));
+  }
+}
+
+// ================================================================
+// File list display
+// ================================================================
+function displayFileList(files) {
+  const keys = Object.keys(files);
+  if (keys.length === 0) {
+    addSys("No files available on hub"); return;
+  }
+  addSys("─── Available Files (" + keys.length + ") ───────────────────");
+  keys.forEach(function(fname) {
+    const info = files[fname];
+    const kb   = (info.size / 1024).toFixed(1);
+    const desc = info.description ? " — " + info.description : "";
+    addSys("  ✓ " + fname + " (" + kb + " KB)" + desc);
+  });
+  addSys("─────────────────────────────────────────────────────────");
+  addSys("Use /download <filename> to download");
+}
+
+// ================================================================
+// Command handler
+// ================================================================
+function handleCommand(raw) {
+  const parts   = raw.trim().split(/\s+/);
+  const command = parts[0].toLowerCase();
+  const args    = parts.slice(1).join(" ");
+
+  if (command === "/help") {
+    toggleHelp(); return;
+  }
+
+  if (command === "/whoami") {
+    const tNames = {tcp:"TCP",freedv:"FreeDV HF",
+                    "ardop-hf":"ARDOP HF","ardop-fm":"ARDOP VHF-FM"};
+    addSys("Callsign:   " + ST.mycall);
+    addSys("Transport:  " + (tNames[ST.transport] || ST.transport));
+    addSys("Connection: " +
+           (ST.connState === 2 ? "Connected to " + ST.remoteCall :
+            ST.connState === 1 ? "Connecting..." : "Disconnected"));
+    addSys("Encryption: " + (ST.encEnabled ? "ON" : "OFF"));
+    addSys("Auth:       " + (ST.authenticated ? "Yes" : "No"));
+    return;
+  }
+
+  if (command === "/connect") {
+    if (!args) {
+      addSys("Usage: /connect <IP_ADDRESS> [port]");
+      addSys("  /connect 192.168.1.100");
+      addSys("  /connect 192.168.1.100 14256");
+      return;
+    }
+    const cparts = args.split(/\s+/);
+    const host   = cparts[0];
+    const port   = cparts[1] ? parseInt(cparts[1]) : 14256;
+    document.getElementById("sb-hub").textContent  = host;
+    document.getElementById("sb-port").textContent = " " + port;
+    addSys("Connecting to " + host + ":" + port + " ...");
+    ST.connState = 1; updateStatus();
+    wsSend({type:"connect", host:host, port:port});
+    return;
+  }
+
+  if (command === "/disconnect") {
+    wsSend({type:"disconnect"});
+    ST.connState = 0; ST.remoteCall = null;
+    ST.authenticated = false; updateStatus();
+    addSys("Disconnecting...");
+    return;
+  }
+
+  if (command === "/auth") {
+    if (!args) { addSys("Usage: /auth <password>"); return; }
+    if (ST.connState !== 2) {
+      addSys("✗ Not connected — use /connect first"); return;
+    }
+    wsSend({type:"auth", password:args});
+    addSys("Authenticating...");
+    return;
+  }
+
+  if (command === "/send") {
+    const sp = args.split(/\s+/);
+    if (sp.length < 2) {
+      addSys("Usage: /send <CALLSIGN> <message>"); return;
+    }
+    if (!ST.authenticated) {
+      addSys("✗ Must authenticate first — use /auth <password>"); return;
+    }
+    wsSend({type:"send", to: sp[0].toUpperCase(),
+            text: sp.slice(1).join(" ")});
+    addSys("Sending message to " + sp[0].toUpperCase() + "...");
+    return;
+  }
+
+  if (command === "/retrieve") {
+    if (!ST.authenticated) {
+      addSys("✗ Must authenticate first"); return;
+    }
+    wsSend({type:"retrieve"});
+    addSys("Requesting stored messages...");
+    return;
+  }
+
+  if (command === "/bul") {
+    if (!args) { addSys("Usage: /bul <message>"); return; }
+    if (!ST.authenticated) {
+      addSys("✗ Must authenticate first"); return;
+    }
+    wsSend({type:"bulletin", text:args});
+    addSys("Sending bulletin...");
+    return;
+  }
+
+  if (command === "/files") {
+    if (!ST.authenticated) {
+      addSys("✗ Must authenticate first"); return;
+    }
+    wsSend({type:"files"});
+    addSys("Requesting file list...");
+    return;
+  }
+
+  if (command === "/download") {
+    if (!args) { addSys("Usage: /download <filename>"); return; }
+    if (!ST.authenticated) {
+      addSys("✗ Must authenticate first"); return;
+    }
+    wsSend({type:"download", filename:args});
+    addSys("Requesting download: " + args);
+    return;
+  }
+
+  if (command === "/cancel") {
+    wsSend({type:"cancel"});
+    addSys("Cancelling...");
+    return;
+  }
+
+  if (command === "/encrypt") {
+    if (args === "off") {
+      ST.encEnabled = false; updateStatus();
+      addSys("⚠ Encryption DISABLED — messages in PLAINTEXT");
+      wsSend({type:"set_encrypt", enabled:false});
+    } else if (args === "on") {
+      ST.encEnabled = true; updateStatus();
+      addSys("✓ Encryption enabled");
+      wsSend({type:"set_encrypt", enabled:true});
+    } else {
+      addSys("Usage: /encrypt on|off");
+    }
+    return;
+  }
+
+  if (command === "/adduser") {
+    const up = args.split(/\s+/);
+    if (up.length !== 2) {
+      addSys("Usage: /adduser <CALLSIGN> <password>"); return;
+    }
+    wsSend({type:"adduser", call:up[0].toUpperCase(), password:up[1]});
+    addSys("Adding user " + up[0].toUpperCase() + "...");
+    return;
+  }
+
+  if (command === "/listusers") {
+    wsSend({type:"listusers"}); return;
+  }
+
+  if (command === "/storage" || command === "/stats") {
+    wsSend({type:"storage"}); return;
+  }
+
+  addSys("Unknown command: " + command);
+  addSys("Type /help for available commands");
+}
+
+// ================================================================
+// Input bar
+// ================================================================
+function submitInput() {
+  const inp = document.getElementById("msg-input");
+  const val = inp.value.trim();
+  if (!val) return;
+  inp.value = "";
+  ST.histIdx = -1;
+
+  // Add to history (avoid consecutive duplicates)
+  if (ST.history[0] !== val) ST.history.unshift(val);
+  if (ST.history.length > 50) ST.history.pop();
+
+  if (val.startsWith("/")) {
+    handleCommand(val);
+  } else {
+    if (ST.connState !== 2) {
+      addSys("✗ Not connected — use /connect <IP> first"); return;
+    }
+    if (!ST.authenticated) {
+      addSys("Must authenticate first — use /auth <password>"); return;
+    }
+    addMsg(ST.mycall, val, true);
+    wsSend({type:"chat", text:val});
+  }
+}
+
+function fillInput(cmd) {
+  const inp = document.getElementById("msg-input");
+  inp.value = cmd;
+  inp.focus();
+}
+
+function toggleHelp() {
+  ST.helpVisible = !ST.helpVisible;
+  document.getElementById("help-panel").style.display =
+    ST.helpVisible ? "block" : "none";
+}
+
+// Input keyboard handling
+document.getElementById("msg-input").addEventListener("keydown", function(e) {
+  if (e.key === "Enter") { submitInput(); return; }
+
+  // Command history
+  if (e.key === "ArrowUp") {
+    e.preventDefault();
+    if (ST.histIdx < ST.history.length - 1) {
+      ST.histIdx++;
+      this.value = ST.history[ST.histIdx] || "";
+    }
+    return;
+  }
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    if (ST.histIdx > 0) {
+      ST.histIdx--;
+      this.value = ST.history[ST.histIdx] || "";
+    } else {
+      ST.histIdx = -1; this.value = "";
+    }
+    return;
+  }
+});
+
+// Ctrl+H for help
+document.addEventListener("keydown", function(e) {
+  if (e.ctrlKey && e.key === "h") { e.preventDefault(); toggleHelp(); }
+});
+
+// ================================================================
+// Boot sequence
+// ================================================================
+document.addEventListener("DOMContentLoaded", function() {
+  updateStatus();
+  addSys("HF-256 Console ready. Type /help for commands.");
+  addSys("Transport: TCP/Internet selected.");
+  if ("{{ settings.hub_address }}") {
+    addSys("Configured hub: {{ settings.hub_address }}");
+    addSys("Type /connect {{ settings.hub_address }} to connect.");
+  } else {
+    addSys("Use /connect <IP_ADDRESS> to connect to a hub.");
+  }
+  addSys("──────────────────────────────────────────────────────");
+  // Connect WebSocket
+  wsConnect();
+});
+</script>
+</body>
+</html>

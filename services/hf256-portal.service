@@ -13,6 +13,7 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/hf256
 
 [Install]
 WantedBy=multi-user.target

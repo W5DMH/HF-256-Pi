@@ -41,6 +41,13 @@
   select:focus, input:focus {
     outline: none; border-color: var(--blue);
   }
+  nav { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+  .nav-btn { padding: 6px 14px; border-radius: 6px;
+             text-decoration: none; font-size: 0.88rem;
+             border: 1px solid var(--border); color: var(--text);
+             background: var(--surface); }
+  .nav-btn.active { background: var(--blue);
+                    border-color: var(--blue); color: #fff; }
   .btn { display: inline-flex; align-items: center; gap: 6px;
          padding: 8px 16px; border-radius: 6px; border: none;
          cursor: pointer; font-size: 0.9rem; font-weight: 500;
@@ -105,6 +112,11 @@
 </head>
 <body>
 <div class="container">
+  <nav>
+    <a class="nav-btn" href="/status">Status</a>
+    <a class="nav-btn" href="/settings">Settings</a>
+    <a class="nav-btn" href="/console">Console</a>
+  </nav>
   <h1>HF-256 Setup</h1>
   <p class="subtitle">Configure your radio hardware to get started.
      Settings can be changed later in the Settings page.</p>

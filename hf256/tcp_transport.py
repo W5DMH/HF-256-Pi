@@ -36,9 +36,9 @@ class TCPTransport:
         self.server_socket = None
         self.client_socket = None
 
-        self.on_state_change:     None
-        self.on_message_received: None
-        self.on_ptt_change:       None
+        self.on_state_change     = None
+        self.on_message_received = None
+        self.on_ptt_change       = None
 
         self._lock          = threading.Lock()
         self._read_thread   = None
@@ -111,17 +111,40 @@ class TCPTransport:
                     time.sleep(1)
 
     def _connect_client(self) -> bool:
-        """Connect to a TCP server."""
+        """Connect to a TCP server and perform HF256 handshake."""
         try:
             self._set_state(TCPTransport.STATE_CONNECTING)
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(10)
             sock.connect((self.host, self.port))
+
+            # --- HF256 handshake ---
+            # Send our callsign to the hub
+            handshake = f"HF256:{self.mycall}\n"
+            sock.sendall(handshake.encode("utf-8"))
+            log.info("Sent handshake: %s", handshake.strip())
+
+            # Read hub's callsign response
+            response = b""
+            while b"\n" not in response:
+                chunk = sock.recv(256)
+                if not chunk:
+                    raise ConnectionError("Hub closed connection during handshake")
+                response += chunk
+
+            response_str = response.decode("utf-8").strip()
+            if not response_str.startswith("HF256:"):
+                raise ValueError(f"Unexpected hub response: {response_str!r}")
+
+            remote_call = response_str.split(":", 1)[1]
+            log.info("Hub identified as: %s", remote_call)
+            # --- handshake complete ---
+
             sock.settimeout(None)
 
             with self._lock:
                 self.client_socket = sock
-                self.remote_call   = self.host
+                self.remote_call   = remote_call
 
             self._set_state(TCPTransport.STATE_CONNECTED)
             self._start_read_thread()
@@ -266,9 +289,6 @@ class TCPTransport:
                     pass
                 self.client_socket = None
         self._set_state(TCPTransport.STATE_DISCONNECTED)
-
-        # Server re-enters accept loop automatically
-        # Client could reconnect here if desired
 
     def _set_state(self, new_state: int, trigger=None):
         """Update state and fire callback."""
