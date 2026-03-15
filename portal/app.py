@@ -45,6 +45,7 @@ BACKUPS_DIR       = CONFIG_DIR / "backups"
 HOSTAPD_CONF      = Path("/etc/hostapd/hostapd.conf")
 ASOUND_CONF       = Path("/etc/asound.conf")
 FREEDVTNC2_BIN    = Path("/usr/bin/python3")
+ARDOPC_BIN        = Path("/usr/local/bin/ardopc")
 
 # ------------------------------------------------------------------ #
 # App
@@ -105,6 +106,21 @@ def save_settings(data: dict) -> bool:
         return False
 
 
+def load_config_env() -> dict:
+    """Load /etc/hf256/config.env key=value pairs."""
+    config = {}
+    try:
+        with open(CONFIG_ENV) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, val = line.partition("=")
+                    config[key.strip()] = val.strip().strip('"')
+    except Exception:
+        pass
+    return config
+
+
 def get_radio_by_id(radio_id: str) -> Optional[dict]:
     radios = load_radios()
     return next((r for r in radios if r["id"] == radio_id), None)
@@ -157,16 +173,32 @@ def generate_rigctld_command(radio_id: str,
     if not radio:
         raise ValueError(f"Unknown radio: {radio_id}")
 
-    parts = [
-        "rigctld",
-        f"-m {radio['hamlib_id']}",
-        f"-r {serial_port}",
-        f"-s {radio['baud_rate']}",
-        "-t 4532"
-    ]
-    ptt = radio.get("ptt_method", "")
-    if ptt and ptt.upper() not in ("VOX", ""):
-        parts.append(f"-P {ptt}")
+    hamlib_id  = radio["hamlib_id"]
+    ptt_method = radio.get("ptt_method", "RTS")
+    baud_rate  = radio.get("baud_rate", 9600)
+
+    # Hamlib model 1 (dummy) is used for DigiRig-style interfaces where
+    # there is no CAT control — only RTS/DTR PTT on the serial port.
+    # For model 1:  -p <port> -P RTS  (PTT port, NOT -r which is CAT port)
+    # For real rigs: -r <port> -s <baud> -P <method> (CAT + PTT)
+    if hamlib_id == 1:
+        parts = [
+            "rigctld",
+            "-m 1",
+            f"-p {serial_port}",
+            f"-P {ptt_method}",
+            "-t 4532"
+        ]
+    else:
+        parts = [
+            "rigctld",
+            f"-m {hamlib_id}",
+            f"-r {serial_port}",
+            f"-s {baud_rate}",
+            "-t 4532"
+        ]
+        if ptt_method and ptt_method.upper() not in ("VOX", ""):
+            parts.append(f"-P {ptt_method}")
     return " ".join(parts)
 
 
@@ -675,6 +707,7 @@ def api_service_status():
         "freedvtnc2": {"running": svc_active("freedvtnc2")},
         "rigctld":    {"running": svc_active("rigctld")},
         "portal":     {"running": svc_active("hf256-portal")},
+        "ardopc":     {"running": _modem_manager.ardop_running()},
         "wifi": {
             "mode":       wifi_mode,
             "ssid":       ssid_disp,
@@ -984,6 +1017,306 @@ def _hub_unpack(data: bytes) -> tuple:
     return msg_type, payload, encrypted
 
 
+# ------------------------------------------------------------------ #
+# Modem process manager
+# ------------------------------------------------------------------ #
+
+class ModemManager:
+    """
+    Manages exclusive ownership of the audio card and PTT port across
+    the three software modems: freedvtnc2 (FreeDV), ardopc HF, ardopc FM.
+
+    Only one modem may run at a time because all three share the same
+    USB audio device and serial PTT port.
+
+    The portal runs as root so subprocess.Popen and systemctl work
+    without sudo.
+
+    Usage:
+        mm = ModemManager()
+        ok, msg = mm.switch_to("ardop-hf")   # stops others, starts ardopc
+        ok, msg = mm.switch_to("freedv")      # stops ardopc, starts freedvtnc2
+        ok, msg = mm.switch_to("tcp")         # stops all modems
+        mm.stop_all()                          # clean shutdown
+    """
+
+    # How long to wait for a modem port to become available (seconds)
+    _READY_TIMEOUT = 15
+
+    def __init__(self):
+        self._ardop_proc  = None   # subprocess.Popen handle for ardopc
+        self._lock        = threading.Lock()
+
+    # ── Public API ────────────────────────────────────────────────
+
+    def switch_to(self, transport: str) -> tuple:
+        """
+        Stop the currently running modem(s) and start the one needed
+        for `transport`.  Returns (success: bool, message: str).
+
+        transport values: "tcp", "freedv", "ardop-hf", "ardop-fm"
+        """
+        with self._lock:
+            config = load_config_env()
+            audio_card  = config.get("AUDIO_CARD", "")
+            serial_port = config.get("SERIAL_PORT", "")
+            radio_id    = config.get("RADIO_ID", "")
+
+            if transport == "tcp":
+                self._stop_all_locked()
+                return True, "TCP selected — all modems stopped"
+
+            if not audio_card:
+                return False, "No audio card configured — run setup wizard first"
+
+            if transport == "freedv":
+                return self._start_freedv_locked(
+                    audio_card, serial_port, radio_id, config)
+
+            if transport in ("ardop-hf", "ardop-fm"):
+                return self._start_ardop_locked(
+                    transport, audio_card, serial_port, radio_id)
+
+            return False, f"Unknown transport: {transport}"
+
+    def stop_all(self):
+        """Stop all modems unconditionally."""
+        with self._lock:
+            self._stop_all_locked()
+
+    def ardop_running(self) -> bool:
+        """True if ardopc subprocess is alive."""
+        with self._lock:
+            return (self._ardop_proc is not None and
+                    self._ardop_proc.poll() is None)
+
+    # ── Internal helpers (call only while holding self._lock) ─────
+
+    def _stop_all_locked(self):
+        """Kill ardopc subprocess and stop freedvtnc2 service."""
+        self._kill_ardop_locked()
+        try:
+            subprocess.run(
+                ["systemctl", "stop", "freedvtnc2"],
+                capture_output=True, timeout=10
+            )
+            app.logger.info("ModemManager: freedvtnc2 stopped")
+        except Exception as e:
+            app.logger.warning("ModemManager: freedvtnc2 stop error: %s", e)
+
+    def _kill_ardop_locked(self):
+        """Terminate the ardopc subprocess if running."""
+        if self._ardop_proc and self._ardop_proc.poll() is None:
+            try:
+                self._ardop_proc.terminate()
+                self._ardop_proc.wait(timeout=5)
+                app.logger.info("ModemManager: ardopc terminated")
+            except subprocess.TimeoutExpired:
+                self._ardop_proc.kill()
+                app.logger.warning("ModemManager: ardopc killed (SIGKILL)")
+            except Exception as e:
+                app.logger.warning("ModemManager: ardopc kill error: %s", e)
+        self._ardop_proc = None
+
+    # CI-V PTT strings for radios that use CAT PTT via ardopcf -c/-k/-u.
+    # ardopcf sends the key string bytes verbatim to the radio serial port
+    # to key TX, and unkey string to release.
+    # Format: hex string, no spaces (ardopcf parses it directly).
+    # Address byte 0x88 = IC-7300, 0x70 = X6100, 0x6E = G90 (typical defaults).
+    # Users may have customised their CI-V address — these are factory defaults.
+    _CIV_PTT = {
+        # radio_id : (key_hex, unkey_hex, baud)
+        "xiegu_x6100": ("FEFE70E01C0001FD", "FEFE70E01C0000FD", 19200),
+        "xiegu_g90":   ("FEFE6EE01C0001FD", "FEFE6EE01C0000FD", 19200),
+        # IC-7300 included for reference — not a Xiegu but uses same protocol
+        "icom_ic7300":  ("FEFE94E01C0001FD", "FEFE94E01C0000FD", 19200),
+    }
+
+    def _start_ardop_locked(self, transport: str,
+                             audio_card: str,
+                             serial_port: str,
+                             radio_id: str) -> tuple:
+        """
+        Stop rigctld + freedvtnc2, then launch ardopc.
+
+        PTT strategy (in priority order):
+          1. If radio_id is in _CIV_PTT: use ardopcf -c/-k/-u CI-V CAT PTT.
+             rigctld must be stopped first to release the serial port.
+          2. If serial_port set but no CI-V entry: use ardopcf -p RTS PTT.
+          3. No serial_port: VOX (no PTT flags).
+        """
+        # Stop freedvtnc2 AND rigctld — both hold audio/serial resources
+        for svc in ("freedvtnc2", "rigctld"):
+            try:
+                subprocess.run(
+                    ["systemctl", "stop", svc],
+                    capture_output=True, timeout=10
+                )
+                app.logger.info("ModemManager: stopped %s", svc)
+            except Exception as e:
+                app.logger.warning("ModemManager: stop %s error: %s", svc, e)
+
+        # Brief pause to let the OS release the serial port
+        time.sleep(0.5)
+
+        # Kill any existing ardopc
+        self._kill_ardop_locked()
+
+        if not ARDOPC_BIN.exists():
+            return False, f"ardopc binary not found at {ARDOPC_BIN}"
+
+        # ardopcf requires ALSA plughw:N,0 device names, NOT integer
+        # card indices (which freedvtnc2 uses).
+        # config.env stores AUDIO_CARD as an integer (e.g. "1").
+        # Convert: "1" -> "plughw:1,0"
+        # plughw is required because ardopcf uses 12 kHz sample rate
+        # which most cards do not natively support — the ALSA plug
+        # layer handles resampling automatically.
+        try:
+            card_int = int(audio_card)
+            alsa_dev = f"plughw:{card_int},0"
+        except ValueError:
+            # Already a device string (e.g. "plughw:1,0") — use as-is
+            alsa_dev = audio_card
+
+        # Build ardopcf command
+        # Positional args order: [options] <port> <capture_dev> <playback_dev>
+        cmd = [str(ARDOPC_BIN)]
+
+        civ = self._CIV_PTT.get(radio_id.lower() if radio_id else "")
+        if civ and serial_port:
+            # CI-V CAT PTT — radio handles TX keying via serial CI-V commands
+            key_str, unkey_str, baud = civ
+            cmd += ["-c", serial_port,
+                    "-k", key_str,
+                    "-u", unkey_str]
+            app.logger.info("ModemManager: using CI-V CAT PTT for %s "
+                            "on %s (key=%s)", radio_id, serial_port, key_str)
+        elif serial_port:
+            # RTS hardware PTT — toggle RTS line on serial port
+            cmd += ["-p", serial_port]
+            app.logger.info("ModemManager: using RTS PTT on %s", serial_port)
+        else:
+            app.logger.info("ModemManager: no serial port — VOX mode")
+
+        cmd += ["8515", alsa_dev, alsa_dev]
+
+        app.logger.info("ModemManager: launching ardopc: %s", " ".join(cmd))
+
+        try:
+            self._ardop_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,   # merge stderr into stdout
+                close_fds=True
+            )
+        except Exception as e:
+            return False, f"Failed to launch ardopc: {e}"
+
+        # Give ardopc 2 seconds to either crash or open its port.
+        # If it crashes immediately we'll know right away.
+        time.sleep(2)
+        exit_code = self._ardop_proc.poll()
+        if exit_code is not None:
+            # Process already exited — read whatever it printed
+            try:
+                out = self._ardop_proc.stdout.read(2048).decode(
+                    "utf-8", errors="replace").strip()
+            except Exception:
+                out = "(no output)"
+            self._ardop_proc = None
+            app.logger.error("ModemManager: ardopc exited immediately "
+                             "(code %d): %s", exit_code, out)
+            return False, (
+                f"ardopc exited immediately (code {exit_code}). "
+                f"Output: {out[:200] if out else '(none)'}"
+            )
+
+        # Process is alive — now wait for port 8515 to be ready
+        label = "ARDOP HF" if transport == "ardop-hf" else "ARDOP VHF-FM"
+        ready = self._wait_for_port(8515, self._READY_TIMEOUT)
+        if not ready:
+            # Read any output before killing it
+            try:
+                out = self._ardop_proc.stdout.read(2048).decode(
+                    "utf-8", errors="replace").strip()
+            except Exception:
+                out = "(no output)"
+            app.logger.error("ModemManager: ardopc port 8515 timeout. "
+                             "Output: %s", out)
+            self._kill_ardop_locked()
+            return False, (
+                f"ardopc running but port 8515 not ready after "
+                f"{self._READY_TIMEOUT}s. Output: {out[:200] if out else '(none)'}"
+            )
+
+        app.logger.info("ModemManager: ardopc ready on port 8515")
+        return True, f"{label} modem ready"
+
+    def _start_freedv_locked(self, audio_card: str, serial_port: str,
+                              radio_id: str, config: dict) -> tuple:
+        """Kill ardopc and (re)start freedvtnc2 + rigctld services."""
+        self._kill_ardop_locked()
+
+        # Start rigctld BEFORE freedvtnc2 so the CAT/PTT interface is
+        # ready when freedvtnc2 connects to it on port 4532.
+        if serial_port:
+            try:
+                subprocess.run(
+                    ["systemctl", "restart", "rigctld"],
+                    capture_output=True, timeout=10
+                )
+                app.logger.info("ModemManager: rigctld restarted")
+                # Brief pause to let rigctld bind port 4532 before freedvtnc2 starts
+                time.sleep(1.5)
+            except Exception as e:
+                app.logger.warning("ModemManager: rigctld restart error: %s", e)
+
+        # Now restart freedvtnc2 (it will find rigctld ready on port 4532)
+        try:
+            subprocess.run(
+                ["systemctl", "restart", "freedvtnc2"],
+                capture_output=True, timeout=15
+            )
+        except Exception as e:
+            return False, f"freedvtnc2 restart failed: {e}"
+
+        # Wait for KISS port 8001 first (data path)
+        ready = self._wait_for_port(8001, self._READY_TIMEOUT)
+        if not ready:
+            return False, f"freedvtnc2 did not open port 8001 within {self._READY_TIMEOUT}s"
+
+        # Also wait for command port 8002 — mode changes go here.
+        # It comes up slightly after the KISS port. Give it 10s extra.
+        cmd_ready = self._wait_for_port(8002, 10)
+        if cmd_ready:
+            app.logger.info("ModemManager: freedvtnc2 fully ready (8001+8002)")
+        else:
+            # Not fatal — KISS works, mode changes may fail briefly
+            app.logger.warning("ModemManager: port 8002 not ready yet "
+                               "(mode changes may fail initially)")
+
+        return True, "FreeDV modem ready"
+
+    @staticmethod
+    def _wait_for_port(port: int, timeout: float) -> bool:
+        """Poll until a TCP port is listening or timeout expires."""
+        import socket as _socket
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                with _socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                    return True
+            except OSError:
+                time.sleep(0.5)
+        return False
+
+
+# Module-level singleton — shared across all ConsoleSession instances
+# (only one modem can run at a time regardless of browser tabs)
+_modem_manager = ModemManager()
+
+
 class ConsoleSession:
     """
     Manages one browser WebSocket connection for the Console page.
@@ -1006,6 +1339,46 @@ class ConsoleSession:
         self.transport_mode = "tcp"
         self._lock          = threading.Lock()   # protects self.transport
         self._send_q        = queue.Queue()      # outbound messages for sender thread
+
+    # ── Modem switching ──────────────────────────────────────────
+
+    def _switch_modem(self, transport: str):
+        """
+        Called in a daemon thread when the user clicks a transport button.
+        Stops the current modem and starts the new one, reporting status
+        to the browser via sys_msg.
+        """
+        labels = {
+            "tcp":      "TCP/Internet",
+            "freedv":   "FreeDV HF",
+            "ardop-hf": "ARDOP HF",
+            "ardop-fm": "ARDOP VHF-FM",
+        }
+        label = labels.get(transport, transport)
+
+        if transport == "tcp":
+            # TCP needs no modem — stop everything
+            self.sys_msg("Stopping modems for TCP mode...")
+            _modem_manager.stop_all()
+            self.sys_msg(f"✓ {label} ready — use /connect <IP> [port]")
+            return
+
+        self.sys_msg(f"Switching to {label} — stopping other modems...")
+        ok, msg = _modem_manager.switch_to(transport)
+
+        if ok:
+            self.sys_msg(f"✓ {msg}")
+            if transport in ("ardop-hf", "ardop-fm"):
+                self.sys_msg("Use /connect <CALLSIGN> to call a station")
+            elif transport == "freedv":
+                self.sys_msg("Use /connect <CALLSIGN> to call a station")
+        else:
+            self.sys_msg(f"✗ {msg}")
+            self.sys_msg("Transport mode unchanged — fix the issue and retry,")
+            self.sys_msg("or select a different transport.")
+            # Do NOT revert transport_mode to tcp — if we did, a subsequent
+            # /connect <CALLSIGN> would be misrouted as a TCP hostname.
+            self.send({"type": "modem_error", "text": msg})
 
     # ── Browser helpers ───────────────────────────────────────────
 
@@ -1046,6 +1419,260 @@ class ConsoleSession:
         except Exception as e:
             self.send({"type": "error", "text": f"Connect error: {e}"})
             self.send({"type": "disconnected"})
+
+    def _connect_ardop(self, target_call: str, fm_mode: bool = False):
+        """
+        Initiate an ARQ call to target_call via the ardopc modem.
+        Runs in a daemon thread.
+
+        _switch_modem() has already started the ardopc process and
+        confirmed port 8515 is open before this is called.  We just
+        open the Python socket connection and issue ARQCALL.
+        """
+        try:
+            from hf256.ardop import ARDOPConnection
+
+            # Guard: confirm ardopc is actually running
+            if not _modem_manager.ardop_running():
+                self.send({"type": "error",
+                           "text": "ARDOP modem is not running — "
+                                   "select ARDOP transport first to start it"})
+                self.send({"type": "disconnected"})
+                return
+
+            with self._lock:
+                if self.transport:
+                    try:
+                        self.transport.vara_disconnect()
+                    except Exception:
+                        pass
+                    self.transport.close()
+                    self.transport = None
+
+            t = ARDOPConnection(
+                mycall=self.mycall,
+                ardop_host="127.0.0.1",
+                ardop_cmd_port=8515,
+                ardop_data_port=8516
+            )
+            t.on_state_change     = self._on_state_change
+            t.on_message_received = self._on_ardop_message
+            t.on_ptt_change       = lambda x: None
+
+            # Add a 2-byte length prefix wrapper to match main.py send_message
+            # ARDOP mode on the target expects: [2-byte len BE][wire data]
+            # as the payload delivered to ardop.send_data(), which then
+            # wraps the whole thing in a 2-byte gARIM frame for over-air.
+            # On receive the target strips the gARIM frame and reads the
+            # 2-byte prefix to reassemble complete messages from fragments.
+            import struct as _struct
+            _ardop_send_raw = t.send_data
+            def _ardop_send_framed(data: bytes, _raw=_ardop_send_raw) -> bool:
+                framed = _struct.pack(">H", len(data)) + data
+                return _raw(framed)
+            t.send_data = _ardop_send_framed
+
+            with self._lock:
+                self.transport = t
+                self._ardop_rx_buf = b""   # reassembly buffer
+
+            # Connect Python sockets to the already-running ardopc process
+            ok = t.connect()
+            if not ok:
+                self.send({"type": "error",
+                           "text": "Could not connect to ardopc on port 8515 — "
+                                   "check journalctl for ardopc errors"})
+                self.send({"type": "disconnected"})
+                return
+
+            # For FM mode set narrower bandwidth
+            if fm_mode:
+                t._send_cmd("ARQBW 500MAX")
+
+            # Initiate the ARQ call to the target station
+            label = "ARDOP VHF-FM" if fm_mode else "ARDOP HF"
+            app.logger.info("ARDOP: calling %s via %s", target_call, label)
+            self.sys_msg(f"Calling {target_call.upper()} via {label} ...")
+            self.sys_msg("(This may take 30-120 seconds on HF)")
+            t.vara_connect(target_call.upper())
+
+        except Exception as e:
+            self.send({"type": "error", "text": f"ARDOP connect error: {e}"})
+            self.send({"type": "disconnected"})
+
+    def _connect_freedv(self, target_call: str):
+        """
+        Initiate a P2P FreeDV session to target_call.
+        Runs in a daemon thread.
+        freedvtnc2 must already be running (started by _switch_modem).
+        """
+        try:
+            from hf256.freedv_transport import FreeDVTransport
+
+            with self._lock:
+                if self.transport:
+                    try:
+                        self.transport.vara_disconnect()
+                    except Exception:
+                        pass
+                    self.transport.close()
+                    self.transport = None
+
+            t = FreeDVTransport(
+                mycall=self.mycall,
+                kiss_host="127.0.0.1",
+                kiss_port=8001
+            )
+            t.on_state_change      = self._on_state_change
+            t.on_message_received  = self._on_freedv_message
+            t.on_announce_received = self._on_announce_received
+            t.on_ptt_change        = lambda x: None
+
+            # Add 2-byte length prefix wrapper — matches main.py send_message
+            # ARDOP framing (both use same 2-byte prefix convention).
+            import struct as _struct
+            _fdv_send_raw = t.send_data
+            def _fdv_send_framed(data: bytes, _raw=_fdv_send_raw) -> bool:
+                framed = _struct.pack(">H", len(data)) + data
+                return _raw(framed)
+            t.send_data = _fdv_send_framed
+
+            with self._lock:
+                self.transport        = t
+                self._freedv_rx_buf   = b""
+
+            ok = t.connect()
+            if not ok:
+                self.send({"type": "error",
+                           "text": "Could not connect to freedvtnc2 on "
+                                   "port 8001 — check journalctl"})
+                self.send({"type": "disconnected"})
+                return
+
+            self.sys_msg(f"Calling {target_call.upper()} via FreeDV ...")
+            self.sys_msg("(Waiting for remote station to answer)")
+            t.vara_connect(target_call.upper())
+
+        except Exception as e:
+            self.send({"type": "error",
+                       "text": f"FreeDV connect error: {e}"})
+            self.send({"type": "disconnected"})
+
+    def _on_freedv_message(self, data: bytes):
+        """
+        Received payload from FreeDVTransport.on_message_received.
+        FreeDVTransport delivers complete payloads (ARQ handles reassembly
+        at the transport layer).  The payload is [2-byte prefix][wire]
+        matching the same framing used by ARDOP (main.py send_message ARDOP
+        mode).  Strip the 2-byte prefix and hand wire to _on_message_received.
+        """
+        import struct as _struct
+        with self._lock:
+            self._freedv_rx_buf = getattr(self, "_freedv_rx_buf", b"") + data
+
+        app.logger.info("FreeDV fragment +%d bytes, buf=%d",
+                        len(data), len(self._freedv_rx_buf))
+
+        while True:
+            with self._lock:
+                buf = self._freedv_rx_buf
+            if len(buf) < 2:
+                break
+            msg_len = _struct.unpack(">H", buf[:2])[0]
+            if msg_len == 0 or msg_len > 256 * 1024:
+                app.logger.error("FreeDV: bad 2-byte prefix %d — "
+                                 "discarding buffer", msg_len)
+                with self._lock:
+                    self._freedv_rx_buf = b""
+                break
+            if len(buf) < 2 + msg_len:
+                break
+            wire = buf[2: 2 + msg_len]
+            with self._lock:
+                self._freedv_rx_buf = buf[2 + msg_len:]
+            app.logger.info("FreeDV: complete %d-byte message extracted",
+                            len(wire))
+            self._on_message_received(wire)
+
+    def _on_announce_received(self, src: str, text: str):
+        """Handle received ANNOUNCE broadcast from another station."""
+        app.logger.info("FreeDV ANNOUNCE from %s: %s", src, text[:80])
+        self.send({"type": "announce", "src": src, "text": text})
+
+    def _announce_direct(self, text: str) -> bool:
+        """
+        Send an ANNOUNCE packet directly to freedvtnc2 KISS port 8001
+        without needing an active FreeDVTransport session.
+        Used when /announce is issued before /connect.
+        Opens a fresh socket, sends one KISS frame, closes immediately.
+        """
+        try:
+            from hf256.freedv_transport import _pack, _kiss_encode, PKT_ANNOUNCE, BROADCAST
+            import socket as _sock
+            pkt   = _pack(PKT_ANNOUNCE, self.mycall, BROADCAST,
+                          text.encode("utf-8", errors="replace"))
+            frame = _kiss_encode(pkt)
+            s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+            s.settimeout(3)
+            s.connect(("127.0.0.1", 8001))
+            s.sendall(frame)
+            s.close()
+            app.logger.info("FreeDV direct ANNOUNCE sent (%d bytes)", len(frame))
+            return True
+        except Exception as e:
+            app.logger.error("FreeDV direct ANNOUNCE failed: %s", e)
+            return False
+
+    def _on_ardop_message(self, data: bytes):
+        """
+        Called by ARDOPConnection._data_reader with the payload of each
+        received gARIM frame — the 2-byte length + mode header has already
+        been stripped by _data_reader before calling on_message_received.
+
+        The target Pi's send_message() for ARDOP sends raw wire data with
+        a 2-byte length prefix (added by ardop.send_data gARIM framing).
+        After _data_reader strips that header, we receive complete HF-256
+        wire messages directly — no additional reassembly prefix needed.
+
+        However ARDOP may fragment large messages across multiple ARQ frames
+        so we still buffer and use the 2-byte prefix that main.py's
+        send_message adds for ARDOP mode to know when we have a full message.
+        """
+        import struct as _struct
+
+        with self._lock:
+            self._ardop_rx_buf = getattr(self, "_ardop_rx_buf", b"") + data
+
+        app.logger.info("ARDOP fragment +%d bytes, buf=%d",
+                        len(data), len(self._ardop_rx_buf))
+
+        while True:
+            with self._lock:
+                buf = self._ardop_rx_buf
+
+            # main.py send_message for ARDOP uses a 2-byte length prefix
+            if len(buf) < 2:
+                break
+
+            msg_len = _struct.unpack(">H", buf[:2])[0]
+            if msg_len == 0 or msg_len > 256 * 1024:
+                app.logger.error("ARDOP: bad 2-byte length prefix %d — "
+                                 "discarding buffer", msg_len)
+                with self._lock:
+                    self._ardop_rx_buf = b""
+                break
+
+            if len(buf) < 2 + msg_len:
+                break   # need more data
+
+            wire = buf[2: 2 + msg_len]
+            with self._lock:
+                self._ardop_rx_buf = buf[2 + msg_len:]
+
+            app.logger.info("ARDOP: complete %d-byte message extracted",
+                            len(wire))
+            # Hand complete wire message to the normal receive handler
+            self._on_message_received(wire)
 
     def _on_state_change(self, old_state, new_state, trigger=None):
         if new_state == 2:
@@ -1162,11 +1789,14 @@ class ConsoleSession:
 
     def _send_hub(self, msg_type: int, payload: bytes) -> bool:
         """
-        Pack in hub wire format and send with inner 4-byte prefix.
-        send_data() adds the outer prefix automatically.
-        """
-        import struct
+        Pack in hub wire format and call transport.send_data(wire).
 
+        Framing is transport-specific and handled by send_data():
+          TCP:  TCPTransport.send_data() prepends a 4-byte length prefix.
+          ARDOP: _ardop_send_framed wrapper prepends a 2-byte prefix to match
+                 main.py send_message() ARDOP framing, then ardop.send_data()
+                 wraps everything in a 2-byte gARIM frame for over-air delivery.
+        """
         with self._lock:
             transport = self.transport
 
@@ -1174,13 +1804,9 @@ class ConsoleSession:
             self.sys_msg("✗ Not connected to hub")
             return False
 
-        wire        = _hub_pack(msg_type, payload, encrypt=self.enc_enabled)
-        app.logger.info("Console TX: type=0x%02x wire=%d bytes",
-                        msg_type, len(wire))
-        # Pi's send_data adds a 4-byte length prefix.
-        # Hub's _read_loop strips that prefix and passes bare wire
-        # to _on_vara_message which calls HF256Message.unpack directly
-        # (no inner prefix for TCP mode).
+        wire = _hub_pack(msg_type, payload, encrypt=self.enc_enabled)
+        app.logger.info("Console TX: type=0x%02x wire=%d bytes transport=%s",
+                        msg_type, len(wire), type(transport).__name__)
         return transport.send_data(wire)
 
     # ── Browser command dispatcher ────────────────────────────────
@@ -1199,30 +1825,71 @@ class ConsoleSession:
             self.sys_msg(f"Session ready — {self.mycall} — {status}")
 
         elif mtype == "set_transport":
-            self.transport_mode = msg.get("transport", "tcp")
+            new_mode = msg.get("transport", "tcp")
+            self.transport_mode = new_mode
+            # Switch modems in a background thread — port polling can take
+            # up to _READY_TIMEOUT seconds and must not block the WS loop
+            threading.Thread(
+                target=self._switch_modem,
+                args=(new_mode,),
+                daemon=True
+            ).start()
 
         elif mtype == "set_encrypt":
             self.enc_enabled = bool(msg.get("enabled", True))
 
         elif mtype == "connect":
-            host = msg.get("host", "127.0.0.1")
-            port = int(msg.get("port", 14256))
-            self.send({"type": "connecting"})
-            threading.Thread(target=self._connect_tcp,
-                             args=(host, port), daemon=True).start()
+            tmode = self.transport_mode
+            if tmode in ("ardop-hf", "ardop-fm"):
+                target = msg.get("target_call", "").strip().upper()
+                if not target:
+                    self.sys_msg("\u2717 Usage: /connect <CALLSIGN>  (ARDOP mode)")
+                    return
+                self.send({"type": "connecting"})
+                fm = (tmode == "ardop-fm")
+                threading.Thread(target=self._connect_ardop,
+                                 args=(target, fm), daemon=True).start()
+            elif tmode == "freedv":
+                target = msg.get("target_call", "").strip().upper()
+                if not target:
+                    self.sys_msg("\u2717 Usage: /connect <CALLSIGN>  (FreeDV mode)")
+                    return
+                self.send({"type": "connecting"})
+                threading.Thread(target=self._connect_freedv,
+                                 args=(target,), daemon=True).start()
+            else:
+                host = msg.get("host", "127.0.0.1")
+                port = int(msg.get("port", 14256))
+                self.send({"type": "connecting"})
+                threading.Thread(target=self._connect_tcp,
+                                 args=(host, port), daemon=True).start()
 
         elif mtype == "disconnect":
             with self._lock:
                 if self.transport:
-                    # shutdown() sends TCP FIN immediately so the hub's
-                    # _read_loop detects the disconnect right away
-                    import socket as _socket
-                    try:
-                        if self.transport.client_socket:
-                            self.transport.client_socket.shutdown(
-                                _socket.SHUT_RDWR)
-                    except Exception:
-                        pass
+                    if self.transport_mode in ("ardop-hf", "ardop-fm"):
+                        # ARDOP: send DISCONNECT command, wait briefly
+                        try:
+                            self.transport.vara_disconnect()
+                        except Exception:
+                            pass
+                        import time as _time
+                        _time.sleep(0.3)
+                    elif self.transport_mode == "freedv":
+                        # FreeDV: send DISC packet (vara_disconnect does this)
+                        try:
+                            self.transport.vara_disconnect()
+                        except Exception:
+                            pass
+                    else:
+                        # TCP: shutdown() sends FIN immediately
+                        import socket as _socket
+                        try:
+                            if self.transport.client_socket:
+                                self.transport.client_socket.shutdown(
+                                    _socket.SHUT_RDWR)
+                        except Exception:
+                            pass
                     self.transport.close()
                     self.transport = None
             self.send({"type": "disconnected"})
@@ -1267,6 +1934,75 @@ class ConsoleSession:
 
         elif mtype == "cancel":
             self.sys_msg("Cancel requested — transfer will time out")
+
+        elif mtype == "announce":
+            text = msg.get("text", "").strip()
+            if not text:
+                self.sys_msg("\u2717 Usage: /announce <message>")
+            elif self.transport_mode != "freedv":
+                self.sys_msg("\u2717 /announce is only available in FreeDV mode")
+            else:
+                # Try the active transport first (if connected)
+                with self._lock:
+                    t = self.transport
+                if t and hasattr(t, "send_announce"):
+                    ok = t.send_announce(f"{self.mycall}: {text}")
+                else:
+                    # No active session — send directly via KISS to port 8001.
+                    # Announce does not require a P2P connection.
+                    ok = self._announce_direct(f"{self.mycall}: {text}")
+                if ok:
+                    self.sys_msg("\u2713 Announce sent: " + text)
+                else:
+                    self.sys_msg("\u2717 Announce failed — is FreeDV modem running?")
+
+        elif mtype == "set_freedv_mode":
+            # Change freedvtnc2 operating mode on the fly via port 8002
+            mode = msg.get("mode", "DATAC1").upper()
+            valid = ("DATAC0", "DATAC1", "DATAC3", "DATAC4")
+            if mode not in valid:
+                self.sys_msg("\u2717 Invalid FreeDV mode: " + mode)
+            else:
+                ok, resp = freedvtnc2_command(f"MODE {mode}")
+                if ok:
+                    self.sys_msg("\u2713 FreeDV mode set to " + mode)
+                    # Persist the mode change to config.env so next restart
+                    # uses the same mode
+                    try:
+                        cfg_path = str(CONFIG_ENV)
+                        with open(cfg_path) as f_:
+                            lines = f_.readlines()
+                        with open(cfg_path, "w") as f_:
+                            for ln in lines:
+                                if ln.startswith("FREEDV_MODE="):
+                                    f_.write(f"FREEDV_MODE={mode}\n")
+                                else:
+                                    f_.write(ln)
+                    except Exception as e_:
+                        app.logger.warning("set_freedv_mode: config.env update failed: %s", e_)
+                else:
+                    self.sys_msg("\u2717 Mode change failed: " + resp)
+
+        elif mtype == "modem_status":
+            # Report current modem state to console
+            ardop_up   = _modem_manager.ardop_running()
+            import subprocess as _sp
+            r = _sp.run(["systemctl", "is-active", "freedvtnc2"],
+                        capture_output=True, text=True)
+            fdv_up = r.stdout.strip() == "active"
+            r2 = _sp.run(["systemctl", "is-active", "rigctld"],
+                         capture_output=True, text=True)
+            rig_up = r2.stdout.strip() == "active"
+            OK_  = "\u2713 running"
+            OFF_ = "\u25cb stopped"
+            self.sys_msg("Modem status:")
+            self.sys_msg("  freedvtnc2 : " + (OK_ if fdv_up   else OFF_))
+            self.sys_msg("  ardopc     : " + (OK_ if ardop_up else OFF_))
+            self.sys_msg("  rigctld    : " + (OK_ if rig_up   else OFF_))
+            config = load_config_env()
+            self.sys_msg(f"  audio card : {config.get('AUDIO_CARD', '?')}")
+            self.sys_msg(f"  serial port: {config.get('SERIAL_PORT', 'none')}")
+            self.sys_msg(f"  FreeDV mode: {config.get('FREEDV_MODE', 'DATAC1')}")
 
         elif mtype == "bulletin":
             text = msg.get("text", "")

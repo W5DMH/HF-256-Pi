@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HF-256 Status</title>
+<link rel="icon"             type="image/x-icon"  href="/static/favicon.ico">
+<link rel="icon"             type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+<link rel="icon"             type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180"       href="/static/apple-touch-icon.png">
+<link rel="manifest"                               href="/static/site.webmanifest">
+<meta name="theme-color"     content="#0d1117">
 <style>
   :root {
     --bg: #0d1117; --surface: #161b22; --border: #30363d;
@@ -98,12 +104,30 @@
   .setup-warn p  { color: var(--muted); font-size: 0.88rem; }
   .setup-warn a  { color: var(--blue); }
   .hidden { display: none !important; }
+
+  /* ── Logo ───────────────────────────────────────────────── */
+  .hf-logo {
+    display: inline-flex; align-items: center; gap: 8px;
+    text-decoration: none; margin-right: 4px;
+  }
+  .hf-logo img {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    /* subtle glow matching the lock icon's green */
+    filter: drop-shadow(0 0 4px rgba(46,160,67,0.4));
+  }
+  .hf-logo span {
+    font-size: 0.88rem; font-weight: 700;
+    color: var(--accent); letter-spacing: 0.04em;
+    display: none;   /* show text only on wider screens */
+  }
+  @media (min-width: 480px) { .hf-logo span { display: inline; } }
 </style>
 </head>
 <body>
 <div class="container">
   <nav>
-    <a class="nav-btn active" href="/status">Status</a>
+    <a class="hf-logo" href="/status"><img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span></a><a class="nav-btn active" href="/status">Status</a>
     <a class="nav-btn" href="/settings">Settings</a>
     <a class="nav-btn" href="/console">Console</a>
   </nav>
@@ -282,6 +306,19 @@ function refreshStatus() {
       html += buildSvcRow("hf256",      d.hf256.running,      "HF-256 App");
       html += buildSvcRow("freedvtnc2", d.freedvtnc2.running,  "FreeDV Modem");
       html += buildSvcRow("rigctld",    d.rigctld.running,     "rigctld CAT");
+      // ardopc is a subprocess managed by the portal, not a systemd service
+      if (d.ardopc !== undefined) {
+        const ardopDot = d.ardopc.running ? 'dot-ok' : 'dot-idle';
+        const ardopBadge = d.ardopc.running ?
+          '<span class="svc-badge badge-ok">running</span>' :
+          '<span class="svc-badge" style="background:rgba(139,148,158,0.15);color:var(--muted)">idle</span>';
+        html += `<div class="svc-row">
+          <div class="dot ${ardopDot}"></div>
+          <div class="svc-name">ARDOP Modem</div>
+          ${ardopBadge}
+          <div class="svc-ctrl"><span style="font-size:0.75rem;color:var(--muted)">managed by console</span></div>
+        </div>`;
+      }
       html += buildSvcRow("hf256-portal", d.portal.running,   "Web Portal");
 
       const apRunning = d.wifi && d.wifi.ap_running;
