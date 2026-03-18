@@ -45,6 +45,11 @@ class TCPTransport:
         self._accept_thread = None
         self._rx_buffer     = b""
 
+        # Inactivity watchdog — same as FreeDVTransport
+        self.inactivity_timeout = 120   # seconds of silence before disconnect
+        self._last_rx_time      = 0.0
+        self._last_tx_time      = 0.0
+
     def connect(self) -> bool:
         """Start server or connect as client."""
         self.running = True
@@ -92,6 +97,39 @@ class TCPTransport:
 
                 log.info("TCP client connected from %s", addr)
 
+                # Perform HF256 handshake — must match _connect_client
+                try:
+                    conn.settimeout(10)
+
+                    # Read spoke callsign
+                    handshake = b""
+                    while b"\n" not in handshake:
+                        chunk = conn.recv(256)
+                        if not chunk:
+                            raise ConnectionError("Spoke closed during handshake")
+                        handshake += chunk
+
+                    handshake_str = handshake.decode("utf-8").strip()
+                    if not handshake_str.startswith("HF256:"):
+                        raise ValueError(f"Invalid handshake: {handshake_str!r}")
+
+                    remote_call = handshake_str.split(":", 1)[1]
+                    log.info("Spoke identified as: %s", remote_call)
+
+                    # Send our callsign back
+                    response = f"HF256:{self.mycall}\n"
+                    conn.sendall(response.encode("utf-8"))
+
+                    conn.settimeout(None)
+
+                except Exception as e:
+                    log.error("Handshake failed with %s: %s", addr, e)
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    continue
+
                 with self._lock:
                     # Close existing connection if any
                     if self.client_socket:
@@ -100,7 +138,7 @@ class TCPTransport:
                         except Exception:
                             pass
                     self.client_socket = conn
-                    self.remote_call   = str(addr[0])
+                    self.remote_call   = remote_call
 
                 self._set_state(TCPTransport.STATE_CONNECTED)
                 self._start_read_thread()
@@ -209,6 +247,7 @@ class TCPTransport:
                     self._handle_disconnect()
                     break
 
+                self._last_rx_time = time.time()
                 if self.on_message_received:
                     try:
                         self.on_message_received(data)
@@ -255,11 +294,33 @@ class TCPTransport:
         try:
             prefix  = struct.pack(">I", len(data))
             sock.sendall(prefix + data)
+            self._last_tx_time = time.time()
             return True
         except Exception as e:
             log.error("TCP send error: %s", e)
             self._handle_disconnect()
             return False
+
+    def _watchdog(self):
+        """
+        Inactivity watchdog — disconnects if no data received for
+        inactivity_timeout seconds. Same behaviour as FreeDVTransport.
+        """
+        log.info("TCP watchdog started (inactivity=%ds)", self.inactivity_timeout)
+        while True:
+            time.sleep(5)
+            if self.state != TCPTransport.STATE_CONNECTED:
+                log.info("TCP watchdog exiting (not connected)")
+                return
+            if self.inactivity_timeout <= 0:
+                continue
+            now = time.time()
+            if (self._last_rx_time > 0 and
+                    now - self._last_rx_time > self.inactivity_timeout):
+                log.warning("TCP inactivity timeout (%.0fs) — disconnecting",
+                            now - self._last_rx_time)
+                self._handle_disconnect()
+                return
 
     def close(self):
         """Disconnect and clean up."""
@@ -300,6 +361,12 @@ class TCPTransport:
             log.info("TCP state: %s -> %s",
                      state_names.get(old_state),
                      state_names.get(new_state))
+
+        if old_state != new_state and new_state == TCPTransport.STATE_CONNECTED:
+            self._last_rx_time = time.time()
+            self._last_tx_time = time.time()
+            threading.Thread(target=self._watchdog, daemon=True,
+                             name="tcp-watchdog").start()
 
         if self.on_state_change and old_state != new_state:
             try:

@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
-from flask import (
+from flask import (request,
     Flask, render_template, request, jsonify, redirect, url_for
 )
 from flask_sock import Sock
@@ -119,6 +119,22 @@ def load_config_env() -> dict:
     except Exception:
         pass
     return config
+
+
+def get_ip_address_str() -> str:
+    """Return the Pi current IP address for display in sys_msg."""
+    import subprocess as _sp
+    for iface in ("wlan0", "eth0"):
+        try:
+            r = _sp.run(["ip", "addr", "show", iface],
+                        capture_output=True, text=True, timeout=3)
+            for line in r.stdout.split("\n"):
+                line = line.strip()
+                if line.startswith("inet ") and "127." not in line:
+                    return line.split()[1].split("/")[0]
+        except Exception:
+            pass
+    return ""
 
 
 def get_radio_by_id(radio_id: str) -> Optional[dict]:
@@ -297,6 +313,107 @@ def console():
     return render_template("console.html",
                            system_info=get_system_info(),
                            settings=load_settings())
+
+
+@app.route("/files")
+def files_page():
+    """Hub file management page."""
+    return render_template("files.html",
+                           system_info=get_system_info(),
+                           settings=load_settings())
+
+
+@app.route("/help")
+def help_page():
+    """Serve the pre-rendered help page."""
+    return render_template("help.html",
+                           system_info=get_system_info(),
+                           settings=load_settings())
+
+
+# ------------------------------------------------------------------ #
+# Hub File Management API
+# ------------------------------------------------------------------ #
+
+HUB_FILES_DIR = Path("/home/pi/.hf256/hub_files")
+
+@app.route("/api/hub-files", methods=["GET"])
+def api_hub_files_list():
+    """Return list of files in hub_files directory."""
+    HUB_FILES_DIR.mkdir(parents=True, exist_ok=True)
+    files = []
+    for f in sorted(HUB_FILES_DIR.iterdir()):
+        if not f.is_file() or f.suffix == ".desc":
+            continue
+        desc_file = HUB_FILES_DIR / (f.name + ".desc")
+        desc = desc_file.read_text().strip() if desc_file.exists() else ""
+        files.append({
+            "name":        f.name,
+            "size":        f.stat().st_size,
+            "description": desc,
+            "modified":    int(f.stat().st_mtime),
+        })
+    return jsonify({"files": files})
+
+
+@app.route("/api/hub-files/upload", methods=["POST"])
+def api_hub_files_upload():
+    """Upload a file to hub_files directory."""
+    HUB_FILES_DIR.mkdir(parents=True, exist_ok=True)
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    f       = request.files["file"]
+    desc    = request.form.get("description", "").strip()
+    fname   = Path(f.filename).name   # strip any path components
+    if not fname:
+        return jsonify({"error": "Invalid filename"}), 400
+    dest = HUB_FILES_DIR / fname
+    f.save(str(dest))
+    if desc:
+        (HUB_FILES_DIR / (fname + ".desc")).write_text(desc)
+    elif (HUB_FILES_DIR / (fname + ".desc")).exists():
+        pass   # keep existing description
+    app.logger.info("Hub files: uploaded %s (%d bytes)", fname,
+                    dest.stat().st_size)
+    return jsonify({"ok": True, "name": fname, "size": dest.stat().st_size})
+
+
+@app.route("/api/hub-files/delete", methods=["POST"])
+def api_hub_files_delete():
+    """Delete a file from hub_files directory."""
+    data  = request.get_json(force=True) or {}
+    fname = Path(data.get("name", "")).name
+    if not fname:
+        return jsonify({"error": "No filename"}), 400
+    target = HUB_FILES_DIR / fname
+    if not target.exists():
+        return jsonify({"error": "File not found"}), 404
+    target.unlink()
+    desc = HUB_FILES_DIR / (fname + ".desc")
+    if desc.exists():
+        desc.unlink()
+    app.logger.info("Hub files: deleted %s", fname)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/hub-files/description", methods=["POST"])
+def api_hub_files_description():
+    """Update the description of a hub file."""
+    data  = request.get_json(force=True) or {}
+    fname = Path(data.get("name", "")).name
+    desc  = data.get("description", "").strip()
+    if not fname:
+        return jsonify({"error": "No filename"}), 400
+    target = HUB_FILES_DIR / fname
+    if not target.exists():
+        return jsonify({"error": "File not found"}), 404
+    desc_file = HUB_FILES_DIR / (fname + ".desc")
+    if desc:
+        desc_file.write_text(desc)
+    else:
+        if desc_file.exists():
+            desc_file.unlink()
+    return jsonify({"ok": True})
 
 
 # ------------------------------------------------------------------ #
@@ -619,15 +736,17 @@ def api_wifi_mode():
     if mode == "ap":
         ssid     = data.get("ssid",     settings["ap_ssid"])
         password = data.get("password", settings["ap_password"])
-        settings["wifi_mode"]   = "ap"
-        settings["ap_ssid"]     = ssid
-        settings["ap_password"] = password
-        save_settings(settings)
 
         result = subprocess.run(
             ["/opt/hf256/scripts/wifi-mode.sh", "ap", ssid, password],
             capture_output=True, text=True, timeout=30
         )
+        if result.returncode == 0:
+            # Save only after script confirms success
+            settings["wifi_mode"]   = "ap"
+            settings["ap_ssid"]     = ssid
+            settings["ap_password"] = password
+            save_settings(settings)
         return jsonify({
             "success": result.returncode == 0,
             "message": f"AP mode: {ssid}",
@@ -641,16 +760,38 @@ def api_wifi_mode():
             return jsonify({"success": False,
                             "error": "SSID required"}), 400
 
-        settings["wifi_mode"]       = "client"
-        settings["client_ssid"]     = ssid
-        settings["client_password"] = password
-        save_settings(settings)
+        # Script timeout = 20s assoc + 15s DHCP + 5s buffer = 40s.
+        # The script handles its own fallback to AP on failure and
+        # reverts settings.json itself, so we do NOT save settings
+        # before running — only save on confirmed success.
+        try:
+            result = subprocess.run(
+                ["/opt/hf256/scripts/wifi-mode.sh",
+                 "client", ssid, password],
+                capture_output=True, text=True, timeout=60
+            )
+            success = result.returncode == 0
+        except subprocess.TimeoutExpired:
+            app.logger.error("wifi-mode.sh client timed out")
+            # Script may have left AP stack down — force AP recovery
+            subprocess.Popen(
+                ["/opt/hf256/scripts/wifi-mode.sh", "reset"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            return jsonify({
+                "success": False,
+                "error": "WiFi switch timed out — reverting to AP mode",
+                "new_ip": None
+            })
 
-        result = subprocess.run(
-            ["/opt/hf256/scripts/wifi-mode.sh",
-             "client", ssid, password],
-            capture_output=True, text=True, timeout=45
-        )
+        if success:
+            # Save client mode only after confirmed connection
+            settings["wifi_mode"]       = "client"
+            settings["client_ssid"]     = ssid
+            settings["client_password"] = password
+            save_settings(settings)
+        # If script failed it already reverted settings.json to ap internally
+
         # Get new IP
         new_ip = None
         try:
@@ -667,7 +808,7 @@ def api_wifi_mode():
             pass
 
         return jsonify({
-            "success":  result.returncode == 0,
+            "success":  success,
             "message":  f"Client mode: {ssid}",
             "new_ip":   new_ip,
             "warning":  "Portal now at http://" + (new_ip or "IP-on-display")
@@ -699,19 +840,65 @@ def api_service_status():
     cl_ssid   = settings.get("client_ssid", "")
     ssid_disp = ap_ssid if wifi_mode == "ap" else cl_ssid
 
+    portal_up  = svc_active("hf256-portal")
+    fdv_up     = svc_active("freedvtnc2")
+    rig_up     = svc_active("rigctld")
+    ardop_up   = _modem_manager.ardop_running()
+
+    # Determine overall status and human-readable mode for the TFT display.
+    # "Running"  = portal + the services needed for current transport are up
+    # "Partial"  = portal up but something expected is missing
+    # "Starting" = portal not yet up
+    transport = _active_transport
+
+    # Human-readable mode string for TFT display
+    if transport == "tcp":
+        mode_str = "TCP"
+    elif transport == "ardop-fm":
+        mode_str = "ARDOP FM"
+    elif transport == "ardop-hf":
+        mode_str = "ARDOP HF"
+    elif transport == "freedv":
+        # Include the FreeDV sub-mode from config.env
+        cfg      = load_config_env()
+        fdv_mode = cfg.get("FREEDV_MODE", "DATAC1")
+        mode_str = f"FreeDV {fdv_mode}"
+    else:
+        mode_str = transport.upper() if transport else "TCP"
+
+    # Overall status
+    if not portal_up:
+        overall = "Starting"
+    elif transport == "tcp":
+        overall = "Running"
+    elif transport in ("ardop-hf", "ardop-fm"):
+        # ARDOP: need ardopc process running
+        overall = "Running" if ardop_up else "Partial"
+    elif transport == "freedv":
+        # FreeDV: need both freedvtnc2 and rigctld
+        overall = "Running" if (fdv_up and rig_up) else "Partial"
+    else:
+        overall = "Running" if portal_up else "Starting"
+
     return jsonify({
         "setup_complete": is_setup_complete(),
-        "callsign": settings.get("callsign", "N0CALL"),
-        "role":     settings.get("role", ""),
-        "hf256":      {"running": svc_active("hf256")},
-        "freedvtnc2": {"running": svc_active("freedvtnc2")},
-        "rigctld":    {"running": svc_active("rigctld")},
-        "portal":     {"running": svc_active("hf256-portal")},
-        "ardopc":     {"running": _modem_manager.ardop_running()},
+        "callsign":       settings.get("callsign", "N0CALL"),
+        "role":           settings.get("role", ""),
+        "active_transport": transport,
+        "mode":           mode_str,        # human-readable for TFT display
+        "overall_status": overall,
+        "freedvtnc2": {"running": fdv_up},
+        "rigctld":    {"running": rig_up},
+        "portal":     {"running": portal_up},
+        "ardopc":     {"running": ardop_up},
         "wifi": {
             "mode":       wifi_mode,
             "ssid":       ssid_disp,
-            "ap_running": svc_active("hostapd")
+            "ap_running": svc_active("hostapd"),
+            # In client mode wifi is running if wlan0 has an IP
+            # (hostapd is intentionally NOT running in client mode)
+            "running":    (svc_active("hostapd") if wifi_mode == "ap"
+                          else bool(get_ip_address_str()))
         }
     })
 
@@ -770,9 +957,78 @@ def api_system_health():
     return jsonify(health)
 
 
+@app.route("/api/set-time", methods=["POST"])
+def api_set_time():
+    """
+    Set the Pi system clock from the browser's time.
+    Only honoured on hub stations — spokes do not store timestamped data.
+    Silently ignored if NTP is already synced (system has internet time).
+    """
+    settings = load_settings()
+    if settings.get("role") != "hub":
+        return jsonify({"ok": False, "reason": "not a hub"})
+
+    data = request.get_json(force=True) or {}
+    iso  = data.get("iso")          # e.g. "2024-11-19T14:30:00Z"
+    unix = data.get("unix")         # Unix timestamp in seconds (float)
+
+    if not iso and not unix:
+        return jsonify({"ok": False, "reason": "no time provided"})
+
+    # Check if NTP is already providing good time — if the system clock
+    # is within 24 hours of the browser time, NTP is probably working
+    # and we leave it alone. If the clock is way off, set it.
+    import time as _time, subprocess as _sp
+    try:
+        now_sys = _time.time()
+        now_browser = float(unix) if unix else (
+            _time.mktime(_time.strptime(iso.rstrip("Z"), "%Y-%m-%dT%H:%M:%S"))
+        )
+        drift = abs(now_sys - now_browser)
+
+        if drift < 86400:  # within 24 hours — NTP is likely working
+            return jsonify({"ok": True, "action": "skipped",
+                            "reason": f"clock drift only {drift:.0f}s, NTP active"})
+
+        # Clock is badly wrong — set it from browser time
+        # Use 'date -s' which works when running as root
+        dt_str = _time.strftime("%Y-%m-%d %H:%M:%S",
+                                 _time.gmtime(now_browser))
+        result = _sp.run(
+            ["date", "-u", "-s", dt_str],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            # Also sync hardware clock if available
+            _sp.run(["hwclock", "-w"], capture_output=True, timeout=5)
+            app.logger.info("System time set to %s (drift was %.0fs)",
+                            dt_str, drift)
+            return jsonify({"ok": True, "action": "set",
+                            "time": dt_str, "drift": round(drift)})
+        else:
+            app.logger.error("date -s failed: %s", result.stderr)
+            return jsonify({"ok": False, "reason": result.stderr.strip()})
+
+    except Exception as e:
+        app.logger.error("api_set_time error: %s", e)
+        return jsonify({"ok": False, "reason": str(e)})
+
+
+@app.route("/api/get-time")
+def api_get_time():
+    """Return current system time for display."""
+    import time as _time
+    now = _time.time()
+    return jsonify({
+        "unix":    now,
+        "utc":     _time.strftime("%Y-%m-%d %H:%M:%S UTC", _time.gmtime(now)),
+        "iso":     _time.strftime("%Y-%m-%dT%H:%M:%SZ",    _time.gmtime(now)),
+    })
+
+
 @app.route("/api/service/<service>/<action>", methods=["POST"])
 def api_service_control(service, action):
-    allowed = ["hf256", "freedvtnc2", "rigctld",
+    allowed = ["freedvtnc2", "rigctld",
                "hostapd", "dnsmasq", "hf256-portal"]
     if service not in allowed:
         return jsonify({"success": False,
@@ -814,7 +1070,7 @@ def api_restart_services():
 @app.route("/api/reset-setup", methods=["POST"])
 def api_reset_setup():
     try:
-        subprocess.run(["systemctl", "stop", "hf256", "freedvtnc2"],
+        subprocess.run(["systemctl", "stop", "freedvtnc2"],
                        capture_output=True)
         if SETUP_FLAG.exists():
             SETUP_FLAG.unlink()
@@ -828,7 +1084,7 @@ def api_reset_setup():
 
 @app.route("/api/logs/<service>")
 def api_logs(service):
-    allowed = ["hf256", "freedvtnc2", "rigctld",
+    allowed = ["freedvtnc2", "rigctld",
                "hf256-portal", "hf256-firstboot",
                "hostapd", "dnsmasq"]
     if service not in allowed:
@@ -850,11 +1106,37 @@ def api_logs(service):
 
 @app.route("/api/modem-status")
 def api_modem_status():
+    transport = _active_transport
+
+    # In TCP mode the modem is not in use — report that clearly
+    # rather than querying freedvtnc2 which may still be running
+    # as a background service and would return misleading DATAC1 info.
+    if transport == "tcp":
+        # TCP is always available when the portal is running
+        return jsonify({
+            "success": True, "online": True,
+            "mode": "TCP", "ptt": "N/A",
+            "channel": "N/A",
+            "active_transport": transport
+        })
+
+    if transport in ("ardop-hf", "ardop-fm"):
+        ardop_up = _modem_manager.ardop_running()
+        return jsonify({
+            "success": True, "online": ardop_up,
+            "mode": "ARDOP-FM" if transport == "ardop-fm" else "ARDOP-HF",
+            "ptt": "--", "channel": "--",
+            "active_transport": transport
+        })
+
+    # FreeDV — query freedvtnc2 command port for live status
     ok, response = freedvtnc2_command("STATUS")
     if not ok:
         return jsonify({"success": False, "online": False,
-                        "error": response})
-    status = {"success": True, "online": True}
+                        "error": response,
+                        "active_transport": transport})
+    status = {"success": True, "online": True,
+              "active_transport": transport}
     if response.startswith("OK STATUS "):
         for part in response[10:].split():
             if "=" in part:
@@ -920,6 +1202,8 @@ _HUB_TYPE_RETRIEVE = 0x13
 _HUB_TYPE_DL_REQ   = 0x06
 _HUB_TYPE_COMPLETE = 0x07
 _HUB_TYPE_ERROR    = 0x08
+_HUB_TYPE_STORE_ACK    = 0x14   # Hub → spoke: message stored confirmation
+_HUB_TYPE_RETRIEVE_RSP = 0x15   # Hub → spoke: retrieve completion notice
 
 
 def _chat_payload(sender: str, text: str) -> bytes:
@@ -1085,24 +1369,38 @@ class ModemManager:
             self._stop_all_locked()
 
     def ardop_running(self) -> bool:
-        """True if ardopc subprocess is alive."""
+        """True if ardopc is alive — checks subprocess first, then port 8515."""
         with self._lock:
-            return (self._ardop_proc is not None and
-                    self._ardop_proc.poll() is None)
+            proc_alive = (self._ardop_proc is not None and
+                          self._ardop_proc.poll() is None)
+        if proc_alive:
+            return True
+        # Fallback: check if anything is listening on port 8515
+        # (ardopc may have been started outside _modem_manager)
+        import socket as _sock
+        try:
+            s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+            s.settimeout(0.3)
+            s.connect(("127.0.0.1", 8515))
+            s.close()
+            return True
+        except OSError:
+            return False
 
     # ── Internal helpers (call only while holding self._lock) ─────
 
     def _stop_all_locked(self):
-        """Kill ardopc subprocess and stop freedvtnc2 service."""
+        """Kill ardopc, stop freedvtnc2 and rigctld services."""
         self._kill_ardop_locked()
-        try:
-            subprocess.run(
-                ["systemctl", "stop", "freedvtnc2"],
-                capture_output=True, timeout=10
-            )
-            app.logger.info("ModemManager: freedvtnc2 stopped")
-        except Exception as e:
-            app.logger.warning("ModemManager: freedvtnc2 stop error: %s", e)
+        for svc in ("freedvtnc2", "rigctld"):
+            try:
+                subprocess.run(
+                    ["systemctl", "stop", svc],
+                    capture_output=True, timeout=10
+                )
+                app.logger.info("ModemManager: %s stopped", svc)
+            except Exception as e:
+                app.logger.warning("ModemManager: stop %s error: %s", svc, e)
 
     def _kill_ardop_locked(self):
         """Terminate the ardopc subprocess if running."""
@@ -1122,14 +1420,19 @@ class ModemManager:
     # ardopcf sends the key string bytes verbatim to the radio serial port
     # to key TX, and unkey string to release.
     # Format: hex string, no spaces (ardopcf parses it directly).
-    # Address byte 0x88 = IC-7300, 0x70 = X6100, 0x6E = G90 (typical defaults).
+    # Address byte 0x94 = IC-7300, 0xa4 = X6100, 0x6E = G90 (factory defaults).
+    # X6100 CI-V address confirmed: hamlib xiegu.c priv_caps 0xa4,
+    #   and Radioddity X6100 manual PTT cmd 0x1C/0x00/0x01.
     # Users may have customised their CI-V address — these are factory defaults.
     _CIV_PTT = {
         # radio_id : (key_hex, unkey_hex, baud)
-        "xiegu_x6100": ("FEFE70E01C0001FD", "FEFE70E01C0000FD", 19200),
-        "xiegu_g90":   ("FEFE6EE01C0001FD", "FEFE6EE01C0000FD", 19200),
-        # IC-7300 included for reference — not a Xiegu but uses same protocol
+        # Both hyphenated and underscored forms — config.env may use either
+        "xiegu_x6100":  ("FEFEA4E01C0001FD", "FEFEA4E01C0000FD", 19200),
+        "xiegu-x6100":  ("FEFEA4E01C0001FD", "FEFEA4E01C0000FD", 19200),
+        "xiegu_g90":    ("FEFE6EE01C0001FD", "FEFE6EE01C0000FD", 19200),
+        "xiegu-g90":    ("FEFE6EE01C0001FD", "FEFE6EE01C0000FD", 19200),
         "icom_ic7300":  ("FEFE94E01C0001FD", "FEFE94E01C0000FD", 19200),
+        "icom-ic7300":  ("FEFE94E01C0001FD", "FEFE94E01C0000FD", 19200),
     }
 
     def _start_ardop_locked(self, transport: str,
@@ -1183,7 +1486,10 @@ class ModemManager:
         # Positional args order: [options] <port> <capture_dev> <playback_dev>
         cmd = [str(ARDOPC_BIN)]
 
-        civ = self._CIV_PTT.get(radio_id.lower() if radio_id else "")
+        # Normalise radio_id — config.env may use hyphens or underscores
+        rid = (radio_id or "").lower().replace("-", "_")
+        civ = self._CIV_PTT.get(rid) or self._CIV_PTT.get(
+            (radio_id or "").lower())
         if civ and serial_port:
             # CI-V CAT PTT — radio handles TX keying via serial CI-V commands
             key_str, unkey_str, baud = civ
@@ -1233,7 +1539,7 @@ class ModemManager:
             )
 
         # Process is alive — now wait for port 8515 to be ready
-        label = "ARDOP HF" if transport == "ardop-hf" else "ARDOP VHF-FM"
+        label = "ARDOP HF" if transport == "ardop-hf" else "ARDOP FM"
         ready = self._wait_for_port(8515, self._READY_TIMEOUT)
         if not ready:
             # Read any output before killing it
@@ -1316,6 +1622,13 @@ class ModemManager:
 # (only one modem can run at a time regardless of browser tabs)
 _modem_manager = ModemManager()
 
+# Active transport mode — updated by ConsoleSession when user switches
+# transport. Read by api_service_status so the TFT display script
+# can show the correct mode regardless of which modems are running.
+_active_transport = "tcp"  # default on boot
+_active_sessions  = set()  # active ConsoleSession instances for hub TCP dispatch
+_active_sessions  = set()  # active ConsoleSession instances
+
 
 class ConsoleSession:
     """
@@ -1339,8 +1652,58 @@ class ConsoleSession:
         self.transport_mode = "tcp"
         self._lock          = threading.Lock()   # protects self.transport
         self._send_q        = queue.Queue()      # outbound messages for sender thread
+        _active_sessions.add(self)               # register for hub TCP dispatch
 
     # ── Modem switching ──────────────────────────────────────────
+
+    def _teardown_transport(self):
+        """
+        Cleanly close self.transport regardless of type and null it out.
+        Waits briefly for reader threads to exit so the next transport
+        starts with clean state.
+        Called before switching modems to prevent stale transport objects
+        from blocking _start_ardop_listener / _start_freedv_listener.
+        """
+        with self._lock:
+            old_t = self.transport
+            self.transport = None
+            # Clear receive buffers
+            self._freedv_rx_buf = b""
+            self._ardop_rx_buf  = b""
+
+        if old_t is None:
+            return
+
+        # Silence callbacks first so dying threads don't fire events
+        old_t.on_state_change     = None
+        old_t.on_message_received = None
+        try:
+            old_t.on_announce_received = None
+        except AttributeError:
+            pass
+
+        # Disconnect cleanly if connected
+        try:
+            if getattr(old_t, "state", 0) == 2:
+                old_t.vara_disconnect()
+        except Exception:
+            pass
+
+        # Close sockets — this unblocks reader threads immediately
+        try:
+            old_t.close()
+        except Exception:
+            pass
+
+        # Wait for reader thread to exit (FreeDV has _reader_done Event)
+        reader_done = getattr(old_t, "_reader_done", None)
+        if reader_done:
+            reader_done.wait(timeout=2.0)
+        else:
+            # ARDOP has no Event — give threads a moment to notice closed sockets
+            import time as _t; _t.sleep(0.3)
+
+        app.logger.info("_teardown_transport: old transport closed")
 
     def _switch_modem(self, transport: str):
         """
@@ -1348,29 +1711,63 @@ class ConsoleSession:
         Stops the current modem and starts the new one, reporting status
         to the browser via sys_msg.
         """
+        global _active_transport
+
         labels = {
             "tcp":      "TCP/Internet",
             "freedv":   "FreeDV HF",
             "ardop-hf": "ARDOP HF",
-            "ardop-fm": "ARDOP VHF-FM",
+            "ardop-fm": "ARDOP FM",
         }
         label = labels.get(transport, transport)
 
+        # Always tear down the existing transport first.
+        # _start_ardop_listener / _start_freedv_listener check
+        # self.transport is None before starting — without this teardown
+        # they see the stale old transport and return immediately,
+        # leaving the new modem with no Python client attached (deaf).
+        self._teardown_transport()
+
         if transport == "tcp":
-            # TCP needs no modem — stop everything
+            # TCP: stop all modems, then start server listener if hub
             self.sys_msg("Stopping modems for TCP mode...")
             _modem_manager.stop_all()
-            self.sys_msg(f"✓ {label} ready — use /connect <IP> [port]")
+            global _active_transport
+            _active_transport = "tcp"
+            settings = load_settings()
+            if settings.get("role") == "hub":
+                # Hub starts a TCP server so spokes can connect to this IP
+                threading.Thread(
+                    target=self._start_tcp_listener,
+                    daemon=True, name="tcp-listen"
+                ).start()
+            else:
+                self.sys_msg(f"✓ {label} ready — use /connect <IP> [port]")
             return
 
         self.sys_msg(f"Switching to {label} — stopping other modems...")
         ok, msg = _modem_manager.switch_to(transport)
 
         if ok:
+            _active_transport = transport   # update only after modem is ready
             self.sys_msg(f"✓ {msg}")
             if transport in ("ardop-hf", "ardop-fm"):
-                self.sys_msg("Use /connect <CALLSIGN> to call a station")
+                # Start passive listener so hub accepts incoming calls
+                # without needing /connect first — mirrors FreeDV behaviour
+                fm = (transport == "ardop-fm")
+                threading.Thread(
+                    target=self._start_ardop_listener,
+                    args=(fm,),
+                    daemon=True, name="ardop-listen"
+                ).start()
             elif transport == "freedv":
+                # Start passive listener so hub accepts incoming connections
+                # without needing /connect first.
+                threading.Thread(
+                    target=self._start_freedv_listener,
+                    daemon=True, name="freedv-listen"
+                ).start()
+                self.sys_msg("Listening for FreeDV connections...")
                 self.sys_msg("Use /connect <CALLSIGN> to call a station")
         else:
             self.sys_msg(f"✗ {msg}")
@@ -1390,6 +1787,51 @@ class ConsoleSession:
         self.send({"type": "system", "text": text})
 
     # ── Transport ─────────────────────────────────────────────────
+
+    def _start_tcp_listener(self, port: int = 14256):
+        """
+        Start a TCPTransport in server mode so spokes can connect to this hub.
+        Called automatically when a hub selects TCP transport.
+        Binds to 0.0.0.0:14256 and accepts incoming spoke connections.
+        """
+        app.logger.info("_start_tcp_listener: starting on port %d", port)
+        try:
+            from hf256.tcp_transport import TCPTransport
+
+            with self._lock:
+                if self.transport is not None:
+                    app.logger.info("_start_tcp_listener: transport already exists, skipping")
+                    return   # already have a transport
+
+            t = TCPTransport(
+                mycall=self.mycall,
+                mode="server",
+                host="0.0.0.0",
+                port=port
+            )
+            t.on_state_change     = self._on_state_change
+            t.on_message_received = self._on_message_received
+            t.on_ptt_change       = lambda x: None
+
+            with self._lock:
+                if self.transport is not None:
+                    return   # race: another thread beat us
+                self.transport = t
+
+            ok = t.connect()   # TCPTransport.connect() calls _start_server()
+            if ok:
+                app.logger.info("TCP listener active on port %d", port)
+                self.sys_msg(f"✓ TCP/Internet ready — listening on port {port}")
+                self.sys_msg("Spokes can connect using /connect <this-IP>")
+            else:
+                with self._lock:
+                    self.transport = None
+                app.logger.error("TCP listener failed to bind on port %d", port)
+                self.sys_msg(f"✗ TCP listener failed — port {port} may be in use")
+
+        except Exception as e:
+            app.logger.error("_start_tcp_listener error: %s", e)
+            self.sys_msg(f"✗ TCP listener error: {e}")
 
     def _connect_tcp(self, host: str, port: int):
         """Connect to HF-256 hub via TCP. Runs in a daemon thread."""
@@ -1420,6 +1862,70 @@ class ConsoleSession:
             self.send({"type": "error", "text": f"Connect error: {e}"})
             self.send({"type": "disconnected"})
 
+    def _start_ardop_listener(self, fm_mode: bool = False):
+        """
+        Create a passive ARDOPConnection and issue LISTEN TRUE so ardopc
+        accepts incoming ARQ calls without the operator typing /connect.
+        Called automatically when ARDOP-HF or ARDOP-FM transport is selected.
+        This is the ARDOP equivalent of _start_freedv_listener().
+        If a transport already exists (user already called /connect), no-op.
+        """
+        try:
+            from hf256.ardop import ARDOPConnection
+            import struct as _struct
+
+            if not _modem_manager.ardop_running():
+                app.logger.warning("ARDOP listener: ardopc not running")
+                return
+
+            with self._lock:
+                if self.transport is not None:
+                    return   # already have a transport
+
+            t = ARDOPConnection(
+                mycall=self.mycall,
+                ardop_host="127.0.0.1",
+                ardop_cmd_port=8515,
+                ardop_data_port=8516
+            )
+            t.on_state_change     = self._on_state_change
+            t.on_message_received = self._on_ardop_message
+            t.on_ptt_change       = lambda x: None
+
+            # Same 2-byte length prefix framing as _connect_ardop
+            _ardop_send_raw = t.send_data
+            def _ardop_send_framed(data: bytes, _raw=_ardop_send_raw) -> bool:
+                framed = _struct.pack(">H", len(data)) + data
+                return _raw(framed)
+            t.send_data = _ardop_send_framed
+
+            with self._lock:
+                if self.transport is not None:
+                    return   # race: another thread beat us
+                self.transport      = t
+                self._ardop_rx_buf  = b""
+
+            ok = t.connect()
+            if not ok:
+                with self._lock:
+                    self.transport = None
+                app.logger.error("ARDOP listener: could not connect to ardopc")
+                self.sys_msg("✗ ARDOP listener failed — check ardopc is running")
+                return
+
+            # Set FM bandwidth if needed
+            if fm_mode:
+                t._send_cmd("ARQBW 500MAX")
+
+            # connect() already sent LISTEN TRUE — ardopc is now accepting calls
+            label = "ARDOP FM" if fm_mode else "ARDOP HF"
+            app.logger.info("ARDOP listener active (%s)", label)
+            self.sys_msg(f"Listening for {label} connections...")
+            self.sys_msg("Use /connect <CALLSIGN> to call a station")
+
+        except Exception as e:
+            app.logger.error("_start_ardop_listener error: %s", e)
+
     def _connect_ardop(self, target_call: str, fm_mode: bool = False):
         """
         Initiate an ARQ call to target_call via the ardopc modem.
@@ -1440,14 +1946,8 @@ class ConsoleSession:
                 self.send({"type": "disconnected"})
                 return
 
-            with self._lock:
-                if self.transport:
-                    try:
-                        self.transport.vara_disconnect()
-                    except Exception:
-                        pass
-                    self.transport.close()
-                    self.transport = None
+            # Tear down any existing transport cleanly before creating new one
+            self._teardown_transport()
 
             t = ARDOPConnection(
                 mycall=self.mycall,
@@ -1490,7 +1990,7 @@ class ConsoleSession:
                 t._send_cmd("ARQBW 500MAX")
 
             # Initiate the ARQ call to the target station
-            label = "ARDOP VHF-FM" if fm_mode else "ARDOP HF"
+            label = "ARDOP FM" if fm_mode else "ARDOP HF"
             app.logger.info("ARDOP: calling %s via %s", target_call, label)
             self.sys_msg(f"Calling {target_call.upper()} via {label} ...")
             self.sys_msg("(This may take 30-120 seconds on HF)")
@@ -1499,6 +1999,60 @@ class ConsoleSession:
         except Exception as e:
             self.send({"type": "error", "text": f"ARDOP connect error: {e}"})
             self.send({"type": "disconnected"})
+
+    def _start_freedv_listener(self):
+        """
+        Create a passive FreeDVTransport connected to freedvtnc2 KISS port.
+        Does NOT call vara_connect() — just listens for incoming CONN_REQ.
+        Called automatically when FreeDV transport is selected, so the Pi
+        accepts incoming connections without needing /connect first.
+        This is required for hub operation.
+        If a transport already exists (e.g. the user already called /connect),
+        this is a no-op.
+        """
+        try:
+            from hf256.freedv_transport import FreeDVTransport
+            import struct as _struct
+
+            with self._lock:
+                if self.transport is not None:
+                    # Already have a transport (connected or connecting)
+                    return
+
+            t = FreeDVTransport(
+                mycall=self.mycall,
+                kiss_host="127.0.0.1",
+                kiss_port=8001
+            )
+            t.on_state_change      = self._on_state_change
+            t.on_message_received  = self._on_freedv_message
+            t.on_announce_received = self._on_announce_received
+            t.on_ptt_change        = lambda x: None
+
+            _fdv_send_raw = t.send_data
+            def _fdv_send_framed(data: bytes, _raw=_fdv_send_raw) -> bool:
+                framed = _struct.pack(">H", len(data)) + data
+                return _raw(framed)
+            t.send_data = _fdv_send_framed
+
+            with self._lock:
+                if self.transport is not None:
+                    return   # Race: another thread beat us
+                self.transport      = t
+                self._freedv_rx_buf = b""
+
+            ok = t.connect()
+            if not ok:
+                with self._lock:
+                    self.transport = None
+                app.logger.error("FreeDV listener: could not connect to "
+                                 "freedvtnc2 port 8001")
+                self.sys_msg("✗ FreeDV listener failed — check freedvtnc2")
+            else:
+                app.logger.info("FreeDV listener active on port 8001")
+
+        except Exception as e:
+            app.logger.error("_start_freedv_listener error: %s", e)
 
     def _connect_freedv(self, target_call: str):
         """
@@ -1509,14 +2063,11 @@ class ConsoleSession:
         try:
             from hf256.freedv_transport import FreeDVTransport
 
-            with self._lock:
-                if self.transport:
-                    try:
-                        self.transport.vara_disconnect()
-                    except Exception:
-                        pass
-                    self.transport.close()
-                    self.transport = None
+            # Tear down any existing transport (e.g. the passive listener
+            # Tear down any existing transport (listener or prior connection)
+            # before creating the new outgoing transport.
+            self._teardown_transport()
+            app.logger.info("FreeDV: old transport torn down, starting new connection")
 
             t = FreeDVTransport(
                 mycall=self.mycall,
@@ -1683,6 +2234,23 @@ class ConsoleSession:
         elif new_state == 0:
             self.send({"type": "disconnected"})
 
+    def _hub_send(self, wire: bytes):
+        """
+        Send a pre-packed wire message over the current transport.
+        Safe to call from any thread — does NOT need to be called
+        from a background thread itself, but hub response handlers
+        MUST use this via threading.Thread to avoid deadlocking the
+        reader thread that processes incoming ARQ ACKs.
+        """
+        with self._lock:
+            t = self.transport
+        if t and t.state == 2:
+            ok = t.send_data(wire)
+            if not ok:
+                app.logger.warning("_hub_send: send_data failed")
+        else:
+            app.logger.warning("_hub_send: transport not connected")
+
     def _on_message_received(self, data: bytes):
         """
         Data from hub after Pi's TCPTransport._read_loop strips the
@@ -1730,6 +2298,347 @@ class ConsoleSession:
             except Exception as e:
                 app.logger.info("Console RX auth_rsp parse error: %s", e)
 
+        elif msg_type == _HUB_TYPE_AUTH_REQ:
+            # Hub side: spoke is authenticating with us.
+            # Validate callsign/password against ~/.hf256/passwords.json
+            # and send AUTH_RSP back over the same transport.
+            settings = load_settings()
+            if settings.get("role") != "hub":
+                # We are not a hub — ignore auth requests
+                app.logger.warning("Console: received AUTH_REQ but role is not hub")
+                return
+            try:
+                import json as _json
+                import hashlib as _hl
+                creds    = _json.loads(payload.decode())
+                callsign = creds.get("callsign", "").upper()
+                password = creds.get("password", "")
+                app.logger.info("Hub: AUTH_REQ from %s", callsign)
+
+                # Load password database
+                pw_file  = Path("/home/pi/.hf256/passwords.json")
+                success  = False
+                if pw_file.exists():
+                    db   = _json.loads(pw_file.read_text())
+                    h    = _hl.sha256(password.encode()).hexdigest()
+                    success = db.get(callsign) == h
+
+                if success:
+                    # Count waiting messages to notify spoke at login
+                    msg_dir = Path("/home/pi/.hf256/hub_messages") / callsign
+                    pending = 0
+                    if msg_dir.exists():
+                        pending = sum(1 for f in msg_dir.iterdir() if f.is_file())
+                    if pending:
+                        msg_text = (f"Welcome {callsign} — "
+                                    f"{pending} message(s) waiting, use /retrieve")
+                    else:
+                        msg_text = f"Welcome {callsign}"
+                else:
+                    msg_text = "Invalid callsign or password"
+                rsp_payload = _json.dumps(
+                    {"success": success, "message": msg_text}
+                ).encode()
+
+                app.logger.info("Hub: AUTH_RSP to %s: success=%s",
+                                callsign, success)
+                # Send response in a separate thread — CRITICAL.
+                # send_data() is a blocking ARQ call. Calling it from the
+                # reader thread (which processes incoming packets) causes
+                # deadlock: send_data waits for DATA_ACK, but the reader
+                # thread is blocked so it can never receive the ACK.
+                wire = _hub_pack(_HUB_TYPE_AUTH_RSP, rsp_payload,
+                                 encrypt=self.enc_enabled)
+                threading.Thread(
+                    target=self._hub_send, args=(wire,),
+                    daemon=True, name="hub-auth-rsp"
+                ).start()
+            except Exception as e:
+                app.logger.error("Hub: AUTH_REQ handling error: %s", e)
+
+        elif msg_type == _HUB_TYPE_CHAT:
+            # Received on SPOKE: chat from hub/another station — display it.
+            # Received on HUB: incoming chat from spoke — display + echo back
+            # so the spoke sees the message appear on their screen.
+            try:
+                import struct as _struct, json as _json
+                sender_len = _struct.unpack(">H", payload[0:2])[0]
+                sender = payload[2:2+sender_len].decode("utf-8", errors="replace")
+                text   = payload[2+sender_len:].decode("utf-8", errors="replace")
+                app.logger.info("Console RX chat from %s: %s", sender, text[:80])
+                self.send({"type": "chat", "sender": sender, "text": text})
+                # Hub side: echo the message back so the spoke sees it displayed
+                if load_settings().get("role") == "hub":
+                    sndr_b = sender.encode("utf-8")
+                    body_b = text.encode("utf-8")
+                    p      = _struct.pack(">H", len(sndr_b)) + sndr_b + body_b
+                    wire   = _hub_pack(_HUB_TYPE_CHAT, p,
+                                       encrypt=self.enc_enabled)
+                    threading.Thread(
+                        target=self._hub_send, args=(wire,),
+                        daemon=True, name="hub-chat-echo"
+                    ).start()
+            except Exception as e:
+                app.logger.info("Console RX chat parse error: %s", e)
+
+        elif msg_type == _HUB_TYPE_FL_REQ:
+            # Spoke is requesting the file list.
+            settings = load_settings()
+            if settings.get("role") != "hub":
+                return
+            try:
+                import json as _json
+                files_dir = Path("/home/pi/.hf256/hub_files")
+                file_list = {}
+                if files_dir.exists():
+                    for f_ in sorted(files_dir.iterdir()):
+                        if f_.suffix == ".desc" or not f_.is_file():
+                            continue
+                        desc_file = f_.parent / (f_.name + ".desc")
+                        desc = desc_file.read_text().strip()                                if desc_file.exists() else ""
+                        file_list[f_.name] = {
+                            "size":        f_.stat().st_size,
+                            "description": desc
+                        }
+                rsp = _json.dumps(file_list).encode()
+                wire = _hub_pack(_HUB_TYPE_FL_RSP, rsp,
+                                 encrypt=self.enc_enabled)
+                app.logger.info("Hub: FL_RSP with %d files", len(file_list))
+                threading.Thread(
+                    target=self._hub_send, args=(wire,),
+                    daemon=True, name="hub-fl-rsp"
+                ).start()
+            except Exception as e:
+                app.logger.error("Hub: FL_REQ error: %s", e)
+
+        elif msg_type == _HUB_TYPE_RETRIEVE:
+            # Spoke is asking for stored messages.
+            # For FreeDV hub: check ~/.hf256/hub_messages/ for this callsign.
+            settings = load_settings()
+            if settings.get("role") != "hub":
+                return
+            try:
+                import json as _json, struct as _struct
+                remote = getattr(
+                    getattr(self, "transport", None), "remote_call", None
+                ) or ""
+                msg_dir = Path("/home/pi/.hf256/hub_messages") / remote.upper()
+                messages = []
+                if msg_dir.exists():
+                    for mf in sorted(msg_dir.iterdir()):
+                        try:
+                            messages.append(_json.loads(mf.read_text()))
+                            mf.unlink()   # delete after delivery
+                        except Exception:
+                            pass
+
+                # Build all outgoing packets first, then send in a
+                # background thread (send_data blocks on ARQ — must not
+                # be called from the reader thread).
+                import datetime as _dt
+                packets = []
+                for m in messages:
+                    sndr   = m.get("sender", "?")
+                    body   = m.get("text", "")
+                    ts     = m.get("timestamp", 0)
+                    # Format timestamp as readable date/time
+                    try:
+                        dt_str = _dt.datetime.utcfromtimestamp(ts).strftime(
+                            "%Y-%m-%d %H:%MZ")
+                    except Exception:
+                        dt_str = "unknown time"
+                    # Prepend datestamp to body so receiver sees when it was stored
+                    full_body = f"[Stored {dt_str}] {body}"
+                    sndr_b = sndr.encode("utf-8")
+                    body_b = full_body.encode("utf-8")
+                    p      = _struct.pack(">H", len(sndr_b)) + sndr_b + body_b
+                    packets.append(_hub_pack(_HUB_TYPE_CHAT, p,
+                                             encrypt=self.enc_enabled))
+                # Completion notice
+                rsp = _json.dumps(
+                    {"messages": len(messages),
+                     "message": str(len(messages)) + " message(s) delivered"}
+                ).encode()
+                packets.append(_hub_pack(_HUB_TYPE_RETRIEVE_RSP, rsp,
+                                         encrypt=self.enc_enabled))
+
+                n = len(messages)
+                def _send_retrieved(pkts=packets, cnt=n, rem=remote):
+                    for pkt in pkts:
+                        self._hub_send(pkt)
+                    app.logger.info("Hub: delivered %d messages to %s", cnt, rem)
+
+                threading.Thread(target=_send_retrieved, daemon=True,
+                                 name="hub-retrieve").start()
+            except Exception as e:
+                app.logger.error("Hub: RETRIEVE error: %s", e)
+
+        elif msg_type == _HUB_TYPE_STORE:
+            # Spoke is sending a message to store for another callsign.
+            # Payload format: [recip_len:2][recip][inner_wire]
+            # inner_wire = full hub wire format message containing CHAT payload
+            # CHAT payload = [sender_len:2][sender][text]
+            settings = load_settings()
+            if settings.get("role") != "hub":
+                return
+            try:
+                import json as _json, struct as _struct, time as _time
+                off = 0
+                to_len  = _struct.unpack(">H", payload[off:off+2])[0]; off += 2
+                to_call = payload[off:off+to_len].decode("utf-8");     off += to_len
+                inner_wire = payload[off:]   # remainder is encrypted hub wire
+
+                # Unpack the inner wire to extract sender and text
+                try:
+                    inner_type, inner_payload, _ = _hub_unpack(inner_wire)
+                except Exception as e:
+                    app.logger.error("Hub: STORE inner_wire unpack failed: %s", e)
+                    return
+
+                if inner_type != _HUB_TYPE_CHAT:
+                    app.logger.warning("Hub: STORE inner type=0x%02x unexpected",
+                                       inner_type)
+                    return
+
+                sender_len = _struct.unpack(">H", inner_payload[0:2])[0]
+                fr_call    = inner_payload[2:2+sender_len].decode("utf-8",
+                                                                   errors="replace")
+                text       = inner_payload[2+sender_len:].decode("utf-8",
+                                                                   errors="replace")
+
+                # Load user database for validation
+                pw_file = Path("/home/pi/.hf256/passwords.json")
+                known_calls = set()
+                if pw_file.exists():
+                    known_calls = {c.upper() for c in
+                                   _json.loads(pw_file.read_text()).keys()}
+
+                # Determine recipients — "*BUL*" means all registered users
+                if to_call.upper() == "*BUL*":
+                    # Don't store for the sender themselves
+                    recipients = [c for c in known_calls
+                                  if c.upper() != fr_call.upper()]
+                    app.logger.info("Hub: bulletin from %s → %d recipients",
+                                    fr_call, len(recipients))
+                else:
+                    # Validate recipient is a known callsign
+                    if to_call.upper() not in known_calls:
+                        app.logger.warning("Hub: STORE rejected — unknown "
+                                           "recipient %s from %s",
+                                           to_call, fr_call)
+                        # Send rejection back to spoke
+                        rej_payload = _json.dumps(
+                            {"ok": False,
+                             "to": to_call,
+                             "message": (f"Unknown callsign {to_call} — "
+                                         f"message not stored")}
+                        ).encode()
+                        rej_wire = _hub_pack(_HUB_TYPE_STORE_ACK, rej_payload,
+                                             encrypt=self.enc_enabled)
+                        threading.Thread(
+                            target=self._hub_send, args=(rej_wire,),
+                            daemon=True, name="hub-store-rej"
+                        ).start()
+                        return
+                    recipients = [to_call.upper()]
+
+                ts = int(_time.time())
+                for recip in recipients:
+                    msg_dir = Path("/home/pi/.hf256/hub_messages") / recip
+                    msg_dir.mkdir(parents=True, exist_ok=True)
+                    fname = msg_dir / str(int(_time.time() * 1000))
+                    fname.write_text(_json.dumps(
+                        {"sender": fr_call, "text": text,
+                         "timestamp": ts}
+                    ))
+                app.logger.info("Hub: stored message from %s to %s: %s",
+                                fr_call, to_call, text[:40])
+                # Show on hub console
+                self.send({"type": "chat",
+                           "sender": "HUB",
+                           "text": f"[STORE] {fr_call}→{to_call}: {text[:60]}"})
+                # Send STORE_ACK back to spoke
+                if to_call.upper() == "*BUL*":
+                    ack_msg = f"Bulletin stored for {len(recipients)} station(s)"
+                else:
+                    ack_msg = f"Message stored for {to_call}"
+                ack_payload = _json.dumps(
+                    {"ok": True,
+                     "to": to_call,
+                     "message": ack_msg}
+                ).encode()
+                wire = _hub_pack(_HUB_TYPE_STORE_ACK, ack_payload,
+                                 encrypt=self.enc_enabled)
+                threading.Thread(
+                    target=self._hub_send, args=(wire,),
+                    daemon=True, name="hub-store-ack"
+                ).start()
+            except Exception as e:
+                app.logger.error("Hub: STORE error: %s", e)
+
+        elif msg_type == _HUB_TYPE_DL_REQ:
+            # Spoke is requesting a file download.
+            settings = load_settings()
+            if settings.get("role") != "hub":
+                return
+            try:
+                import json as _json, struct as _struct
+                req      = _json.loads(payload.decode())
+                filename = req.get("filename", "")
+                app.logger.info("Hub: DL_REQ for file: %s", filename)
+
+                files_dir = Path("/home/pi/.hf256/hub_files")
+                file_path = files_dir / filename
+                if not file_path.exists() or not file_path.is_file():
+                    # File not found — send error
+                    err = _json.dumps({"filename": filename,
+                                       "error": "File not found"}).encode()
+                    wire = _hub_pack(_HUB_TYPE_ERROR, err,
+                                     encrypt=self.enc_enabled)
+                    threading.Thread(
+                        target=self._hub_send, args=(wire,),
+                        daemon=True, name="hub-dl-err"
+                    ).start()
+                    return
+
+                file_data  = file_path.read_bytes()
+                # Send in chunks of 512 bytes to fit within FreeDV packet limits
+                CHUNK_SIZE = 512
+                total      = (len(file_data) + CHUNK_SIZE - 1) // CHUNK_SIZE
+                fn_b       = filename.encode("utf-8")
+                import hashlib as _hl
+                file_hash  = _hl.md5(file_data).hexdigest().encode()
+
+                self._dl_cancel = False   # reset for new download
+                def _send_file(fd=file_data, fn=fn_b, fh=file_hash,
+                               tot=total, enc=self.enc_enabled,
+                               fname=filename):
+                    for i in range(tot):
+                        if self._dl_cancel:
+                            app.logger.info("Hub: download cancelled at chunk %d/%d",
+                                            i, tot)
+                            return
+                        chunk = fd[i*CHUNK_SIZE:(i+1)*CHUNK_SIZE]
+                        # [fn_len:2][fn][chunk_num:4][total:4][hash_len:2][hash][data]
+                        pkt = (_struct.pack(">H", len(fn)) + fn +
+                               _struct.pack(">II", i, tot) +
+                               _struct.pack(">H", len(fh)) + fh +
+                               chunk)
+                        wire = _hub_pack(_HUB_TYPE_FILE_DATA, pkt, encrypt=enc)
+                        self._hub_send(wire)
+                    # Send completion
+                    done = _json.dumps({"filename": fname,
+                                        "success": True}).encode()
+                    wire = _hub_pack(_HUB_TYPE_COMPLETE, done, encrypt=enc)
+                    self._hub_send(wire)
+                    app.logger.info("Hub: sent %d chunks for %s", tot, fname)
+
+                threading.Thread(target=_send_file, daemon=True,
+                                 name="hub-dl").start()
+
+            except Exception as e:
+                app.logger.error("Hub: DL_REQ error: %s", e)
+
         elif msg_type == _HUB_TYPE_FL_RSP:
             # JSON: the files dict directly (no wrapping key)
             try:
@@ -1771,6 +2680,31 @@ class ConsoleSession:
                            "success":  obj.get("success", False)})
             except Exception as e:
                 app.logger.info("Console RX complete parse error: %s", e)
+
+        elif msg_type == _HUB_TYPE_RETRIEVE_RSP:
+            # Hub finished delivering stored messages
+            try:
+                import json as _json
+                obj = _json.loads(payload.decode())
+                n   = obj.get("messages", 0)
+                if n == 0:
+                    self.sys_msg("No messages waiting")
+                else:
+                    self.sys_msg(f"✓ {n} message(s) retrieved")
+            except Exception as e:
+                app.logger.info("Console RX retrieve_rsp parse error: %s", e)
+
+        elif msg_type == _HUB_TYPE_STORE_ACK:
+            # Hub confirmed it stored our message or bulletin
+            try:
+                import json as _json
+                obj = _json.loads(payload.decode())
+                if obj.get("ok"):
+                    self.sys_msg(f"✓ {obj.get('message', 'Message stored')}")
+                else:
+                    self.sys_msg(f"✗ Store failed: {obj.get('message', 'unknown error')}")
+            except Exception as e:
+                app.logger.info("Console RX store_ack parse error: %s", e)
 
         elif msg_type == _HUB_TYPE_ERROR:
             # JSON: {"filename": str, "error": str}
@@ -1820,15 +2754,29 @@ class ConsoleSession:
             if call:
                 self.mycall = call
             self.enc_enabled = bool(msg.get("encrypt", self.enc_enabled))
+            transport = msg.get("transport", "tcp")
+            self.transport_mode = transport
             _, key = _hub_crypto()
             status = "key loaded" if key else "NO KEY — plaintext only"
             self.sys_msg(f"Session ready — {self.mycall} — {status}")
 
+            # Trigger set_transport to start the correct listener for the hub.
+            # This is safe to call here because _switch_modem runs in a thread
+            # and handles teardown + restart correctly without races.
+            settings = load_settings()
+            if settings.get("role") == "hub":
+                threading.Thread(
+                    target=self._switch_modem,
+                    args=(transport,),
+                    daemon=True, name="hub-init-transport"
+                ).start()
+
         elif mtype == "set_transport":
             new_mode = msg.get("transport", "tcp")
             self.transport_mode = new_mode
-            # Switch modems in a background thread — port polling can take
-            # up to _READY_TIMEOUT seconds and must not block the WS loop
+            # NOTE: _active_transport is updated inside _switch_modem
+            # AFTER the modem is confirmed ready, not here.
+            # This prevents a "Partial" flash while the modem is starting.
             threading.Thread(
                 target=self._switch_modem,
                 args=(new_mode,),
@@ -1897,7 +2845,19 @@ class ConsoleSession:
         elif mtype == "chat":
             text = msg.get("text", "").strip()
             if text:
-                self._send_hub(_HUB_TYPE_CHAT, _chat_payload(self.mycall, text))
+                # Show immediately as local echo — don't wait for hub ARQ queue
+                self.send({"type": "chat", "sender": self.mycall, "text": text})
+                # Send in background thread so we can report ACK receipt
+                def _send_chat(t=text):
+                    ok = self._send_hub(
+                        _HUB_TYPE_CHAT, _chat_payload(self.mycall, t)
+                    )
+                    if ok:
+                        self.sys_msg("✓ Message delivered to hub")
+                    else:
+                        self.sys_msg("✗ Message delivery failed — hub did not ACK")
+                threading.Thread(target=_send_chat, daemon=True,
+                                 name="chat-send").start()
 
         elif mtype == "auth":
             password = msg.get("password", "")
@@ -1911,14 +2871,20 @@ class ConsoleSession:
             text = msg.get("text", "")
             if to and text:
                 import struct as _struct
-                # Inner chat wire (hub binary format)
+                # Build payload
                 inner_wire = _hub_pack(_HUB_TYPE_CHAT,
                                        _chat_payload(self.mycall, text),
                                        encrypt=self.enc_enabled)
-                # StoreMessage binary: [recipient_len:2][recipient][inner_wire]
-                recip_bytes = to.encode('utf-8')
+                recip_bytes  = to.encode('utf-8')
                 store_payload = _struct.pack(">H", len(recip_bytes)) + recip_bytes + inner_wire
-                self._send_hub(_HUB_TYPE_STORE, store_payload)
+                # Send in background — confirmation comes via STORE_ACK from hub
+                def _do_send(p=store_payload, dest=to):
+                    ok = self._send_hub(_HUB_TYPE_STORE, p)
+                    if not ok:
+                        self.sys_msg(f"✗ Transmission failed — hub did not ACK")
+                    # Actual storage confirmation comes via STORE_ACK handler below
+                threading.Thread(target=_do_send, daemon=True,
+                                 name="send-msg").start()
 
         elif mtype == "retrieve":
             self._send_hub(_HUB_TYPE_RETRIEVE, b"{}")
@@ -1933,7 +2899,8 @@ class ConsoleSession:
                 self._send_hub(_HUB_TYPE_DL_REQ, payload)
 
         elif mtype == "cancel":
-            self.sys_msg("Cancel requested — transfer will time out")
+            self._dl_cancel = True
+            self.sys_msg("Download cancelled")
 
         elif mtype == "announce":
             text = msg.get("text", "").strip()
@@ -2006,22 +2973,141 @@ class ConsoleSession:
 
         elif mtype == "bulletin":
             text = msg.get("text", "")
-            if text:
-                self._send_hub(_HUB_TYPE_CHAT,
-                               _chat_payload(self.mycall, f"/bul {text}"))
+            if not text:
+                return
+            settings = load_settings()
+            if settings.get("role") == "hub":
+                # Hub sending bulletin: store for all local users + announce over air
+                try:
+                    import json as _json, time as _time
+                    pw_file = Path("/home/pi/.hf256/passwords.json")
+                    all_calls = []
+                    if pw_file.exists():
+                        all_calls = list(_json.loads(pw_file.read_text()).keys())
+                    recipients = [c for c in all_calls
+                                  if c.upper() != self.mycall.upper()]
+                    ts = int(_time.time())
+                    for recip in recipients:
+                        msg_dir = Path("/home/pi/.hf256/hub_messages") / recip.upper()
+                        msg_dir.mkdir(parents=True, exist_ok=True)
+                        fname = msg_dir / str(int(_time.time() * 1000))
+                        fname.write_text(_json.dumps(
+                            {"sender": self.mycall, "text": text,
+                             "timestamp": ts}
+                        ))
+                    self.sys_msg(f"✓ Bulletin stored for {len(recipients)} station(s)")
+                    app.logger.info("Hub: bulletin stored for %d stations",
+                                    len(recipients))
+                    # Also transmit as FreeDV ANNOUNCE if FreeDV transport active
+                    with self._lock:
+                        t = self.transport
+                    if t and hasattr(t, "send_announce"):
+                        try:
+                            t.send_announce(f"BUL {self.mycall}: {text}")
+                        except Exception:
+                            pass
+                except Exception as e:
+                    self.sys_msg(f"✗ Bulletin error: {e}")
+            else:
+                # Spoke: send STORE to hub with sentinel recipient "*BUL*"
+                import struct as _struct
+                inner_wire = _hub_pack(_HUB_TYPE_CHAT,
+                                       _chat_payload(self.mycall, text),
+                                       encrypt=self.enc_enabled)
+                recip_bytes   = b"*BUL*"
+                store_payload = _struct.pack(">H", len(recip_bytes)) + recip_bytes + inner_wire
+                def _do_bul(p=store_payload):
+                    ok = self._send_hub(_HUB_TYPE_STORE, p)
+                    if not ok:
+                        self.sys_msg("✗ Bulletin transmission failed — hub did not ACK")
+                threading.Thread(target=_do_bul, daemon=True,
+                                 name="bul-send").start()
 
         elif mtype == "adduser":
-            call = msg.get("call", "").upper()
-            pw   = msg.get("password", "")
-            if call and pw:
+            call = msg.get("call", "").strip().upper()
+            pw   = msg.get("password", "").strip()
+            if not call or not pw:
+                self.sys_msg("✗ Usage: /adduser <CALLSIGN> <password>")
+            elif load_settings().get("role") == "hub":
+                # Hub station: write directly to local passwords.json
+                try:
+                    import hashlib as _hl, json as _json
+                    pw_file = Path("/home/pi/.hf256/passwords.json")
+                    pw_file.parent.mkdir(parents=True, exist_ok=True)
+                    db = {}
+                    if pw_file.exists():
+                        db = _json.loads(pw_file.read_text())
+                    db[call] = _hl.sha256(pw.encode()).hexdigest()
+                    pw_file.write_text(_json.dumps(db, indent=2))
+                    pw_file.chmod(0o600)
+                    self.sys_msg(f"✓ User added: {call}")
+                    app.logger.info("Hub: added user %s", call)
+                except Exception as e:
+                    self.sys_msg(f"✗ adduser failed: {e}")
+            else:
+                # Spoke: send command to remote hub over transport
                 self._send_hub(_HUB_TYPE_CHAT,
-                               _chat_payload(self.mycall, f"/adduser {call} {pw}"))
+                               _chat_payload(self.mycall,
+                                             "/adduser " + call + " " + pw))
 
         elif mtype == "listusers":
-            self._send_hub(_HUB_TYPE_CHAT, _chat_payload(self.mycall, "/listusers"))
+            if load_settings().get("role") == "hub":
+                # Hub station: read directly from local passwords.json
+                try:
+                    import json as _json
+                    pw_file = Path("/home/pi/.hf256/passwords.json")
+                    if pw_file.exists():
+                        db = _json.loads(pw_file.read_text())
+                        users = sorted(db.keys())
+                        self.sys_msg(
+                            "Hub users (" + str(len(users)) + "): " +
+                            (", ".join(users) if users else "(none)")
+                        )
+                    else:
+                        self.sys_msg("No users registered yet")
+                except Exception as e:
+                    self.sys_msg(f"✗ listusers failed: {e}")
+            else:
+                self._send_hub(_HUB_TYPE_CHAT,
+                               _chat_payload(self.mycall, "/listusers"))
 
         elif mtype == "storage":
-            self._send_hub(_HUB_TYPE_CHAT, _chat_payload(self.mycall, "/storage"))
+            settings = load_settings()
+            if settings.get("role") == "hub":
+                # Hub: read storage stats directly from local filesystem
+                try:
+                    msg_base  = Path("/home/pi/.hf256/hub_messages")
+                    files_dir = Path("/home/pi/.hf256/hub_files")
+                    # Count queued messages per recipient
+                    msg_stats = {}
+                    if msg_base.exists():
+                        for recip_dir in sorted(msg_base.iterdir()):
+                            if recip_dir.is_dir():
+                                count = sum(1 for f in recip_dir.iterdir()
+                                            if f.is_file())
+                                if count:
+                                    msg_stats[recip_dir.name] = count
+                    total_msgs = sum(msg_stats.values())
+                    # Count hub files
+                    file_count = 0
+                    if files_dir.exists():
+                        file_count = sum(1 for f in files_dir.iterdir()
+                                         if f.is_file()
+                                         and f.suffix != ".desc")
+                    self.sys_msg("─── Hub Storage ──────────────────────────")
+                    self.sys_msg(f"  Files available : {file_count}")
+                    self.sys_msg(f"  Queued messages : {total_msgs}")
+                    if msg_stats:
+                        for call, cnt in msg_stats.items():
+                            self.sys_msg(f"    {call}: {cnt} message(s)")
+                    else:
+                        self.sys_msg("  No queued messages")
+                    self.sys_msg("──────────────────────────────────────────")
+                except Exception as e:
+                    self.sys_msg(f"✗ Storage read error: {e}")
+            else:
+                # Spoke: send as chat command to hub for relay
+                self._send_hub(_HUB_TYPE_CHAT, _chat_payload(self.mycall, "/storage"))
 
         else:
             app.logger.warning("Console: unknown msg type: %s", mtype)
@@ -2047,15 +3133,24 @@ def console_ws(ws):
 
     # Sender thread: drains the outbound queue
     def sender():
+        """
+        Drain _send_q and forward to WebSocket.
+        On send error the WebSocket is broken — log it, discard remaining
+        queued items, and exit. The browser's onclose handler will
+        auto-reconnect within 5 seconds.
+        """
+        ws_broken = False
         while True:
             item = session._send_q.get()
             if item is None:           # None = sentinel, stop
                 break
+            if ws_broken:
+                continue               # drain queue without sending
             try:
                 ws.send(item)
             except Exception as e:
-                app.logger.info("Console ws.send error: %s", e)
-                break
+                app.logger.info("Console ws.send error (browser disconnected): %s", e)
+                ws_broken = True       # keep draining so queue doesn't block
 
     sender_thread = threading.Thread(target=sender, daemon=True)
     sender_thread.start()
@@ -2096,12 +3191,85 @@ def console_ws(ws):
                     session.transport.close()
         except Exception:
             pass
+        _active_sessions.discard(session)
         app.logger.info("Console WebSocket closed")
 
 
 # ------------------------------------------------------------------ #
 # Entry point
 # ------------------------------------------------------------------ #
+
+# ------------------------------------------------------------------ #
+# Hub TCP server — starts at portal boot, no browser session needed
+# ------------------------------------------------------------------ #
+
+def _start_hub_tcp_server():
+    """
+    Start a persistent TCP server on port 14256 for hub stations.
+    Called once at portal startup in a daemon thread.
+    Incoming spoke connections are routed through any active ConsoleSession.
+    """
+    settings = load_settings()
+    if settings.get("role") != "hub":
+        app.logger.info("Hub TCP boot server: role is not hub, skipping")
+        return
+    try:
+        from hf256.tcp_transport import TCPTransport
+        callsign = settings.get("callsign", "N0CALL").upper()
+        app.logger.info("Hub TCP boot server: starting on 0.0.0.0:14256 as %s",
+                        callsign)
+
+        t = TCPTransport(mycall=callsign, mode="server",
+                         host="0.0.0.0", port=14256)
+
+        def _on_msg(data):
+            for session in list(_active_sessions):
+                try:
+                    session._on_message_received(data)
+                    return
+                except Exception as e:
+                    app.logger.error("Hub TCP dispatch error: %s", e)
+            app.logger.info("Hub TCP: message with no active console session")
+
+        def _on_state(old_s, new_s, trigger=None):
+            app.logger.info("Hub TCP: state %d->%d remote=%s",
+                            old_s, new_s, getattr(t, "remote_call", "?"))
+            if new_s == 2:
+                # Hand transport to active ConsoleSession
+                for session in list(_active_sessions):
+                    try:
+                        with session._lock:
+                            session.transport      = t
+                            session.transport_mode = "tcp"
+                        t.on_message_received = session._on_message_received
+                        session._on_state_change(old_s, new_s)
+                        app.logger.info("Hub TCP: transport handed to session")
+                        return
+                    except Exception as e:
+                        app.logger.error("Hub TCP handoff error: %s", e)
+                app.logger.warning("Hub TCP: spoke connected, no console open")
+            elif new_s == 0:
+                for session in list(_active_sessions):
+                    try:
+                        with session._lock:
+                            if session.transport is t:
+                                session.transport = None
+                        session._on_state_change(old_s, new_s)
+                    except Exception:
+                        pass
+
+        t.on_message_received = _on_msg
+        t.on_state_change     = _on_state
+        t.on_ptt_change       = lambda x: None
+
+        ok = t.connect()
+        if ok:
+            app.logger.info("Hub TCP server listening on 0.0.0.0:14256")
+        else:
+            app.logger.error("Hub TCP server failed to bind port 14256")
+    except Exception as e:
+        app.logger.error("_start_hub_tcp_server error: %s", e)
+
 
 if __name__ == "__main__":
     import logging
@@ -2114,4 +3282,8 @@ if __name__ == "__main__":
     # so errors appear in journalctl without debug=True
     app.logger.setLevel(logging.INFO)
     logging.getLogger("hf256").setLevel(logging.INFO)
+    # Start hub TCP server at boot — no browser session required
+    threading.Thread(target=_start_hub_tcp_server,
+                     daemon=True, name="hub-tcp-boot").start()
+
     app.run(host="0.0.0.0", port=80, debug=False)

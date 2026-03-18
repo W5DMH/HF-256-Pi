@@ -39,6 +39,11 @@ class ARDOPConnection:
         self.buffer_size = 0
         self._buffer_lock = threading.Lock()
 
+        # Inactivity watchdog
+        self.inactivity_timeout = 120   # seconds silence → disconnect
+        self._last_rx_time      = 0.0
+        self._last_tx_time      = 0.0
+
         # Callbacks
         self.on_state_change = None
         self.on_message_received = None
@@ -162,7 +167,7 @@ class ARDOPConnection:
             
             with self._send_lock:
                 self.data_socket.sendall(frame)
-            
+            self._last_tx_time = time.time()
             log.info("ARDOP send_data: Frame sent on DATA socket (port 8516)")
             return True
         except Exception as e:
@@ -271,6 +276,7 @@ class ARDOPConnection:
                     log.info("ARDOP RX: mode=%s, %d bytes data", mode, len(data))
                     
                     if mode == "ARQ" and self.on_message_received:
+                        self._last_rx_time = time.time()
                         self.on_message_received(data)
                     
                     # Remove processed frame from buffer
@@ -304,11 +310,17 @@ class ARDOPConnection:
                 self.state = ARDOPConnection.STATE_CONNECTED
                 if len(parts) >= 2:
                     self.remote_call = parts[1]
+                self._last_rx_time = time.time()
+                self._last_tx_time = time.time()
 
                 log.info("Connected to %s", self.remote_call)
 
                 if self.on_state_change:
                     self.on_state_change(old_state, self.state)
+
+            # Start inactivity watchdog
+            threading.Thread(target=self._watchdog, daemon=True,
+                             name="ardop-watchdog").start()
 
         elif cmd.startswith("DISCONNECTED") or cmd.startswith("NEWSTATE DISC"):
             with self._lock:
@@ -362,6 +374,43 @@ class ARDOPConnection:
         log.warning("Buffer drain timeout after %.1f seconds (buffer: %d bytes)",
                    timeout, self.buffer_size)
         return False
+
+    def _watchdog(self):
+        """
+        Inactivity watchdog — disconnects if no data received for
+        inactivity_timeout seconds. Mirrors FreeDVTransport watchdog.
+        """
+        log.info("ARDOP watchdog started (inactivity=%ds)",
+                 self.inactivity_timeout)
+        while True:
+            time.sleep(5)
+            if self.state != ARDOPConnection.STATE_CONNECTED:
+                log.info("ARDOP watchdog exiting (not connected)")
+                return
+            if self.inactivity_timeout <= 0:
+                continue
+            now = time.time()
+            if (self._last_rx_time > 0 and
+                    now - self._last_rx_time > self.inactivity_timeout):
+                log.warning(
+                    "ARDOP inactivity timeout (%.0fs) — disconnecting",
+                    now - self._last_rx_time
+                )
+                try:
+                    self._send_cmd("DISCONNECT")
+                except Exception:
+                    pass
+                with self._lock:
+                    old_state = self.state
+                    self.state = ARDOPConnection.STATE_DISCONNECTED
+                    self.remote_call = None
+                if self.on_state_change:
+                    try:
+                        self.on_state_change(old_state,
+                                             ARDOPConnection.STATE_DISCONNECTED)
+                    except Exception as e:
+                        log.error("ARDOP watchdog on_state_change error: %s", e)
+                return
 
     def close(self):
         """Close connection"""

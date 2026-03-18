@@ -489,7 +489,6 @@ run_chroot "systemctl enable \
     hf256-firstboot.service \
     hf256-portal.service \
     hf256-display.service \
-    hf256.service \
     hf256-wlan.service \
     freedvtnc2.service" \
     || warn "Some services failed to enable"
@@ -503,6 +502,9 @@ run_chroot "systemctl disable \
 # Mask services to prevent interference
 run_chroot "systemctl mask NetworkManager 2>/dev/null || true"
 run_chroot "systemctl mask wpa_supplicant@wlan0.service 2>/dev/null || true"
+# hf256.service (old main.py hub) is superseded by hf256-portal — mask it
+# so it can never be accidentally started on any image
+run_chroot "systemctl mask hf256.service 2>/dev/null || true"
 
 ok "Systemd services installed and enabled"
 

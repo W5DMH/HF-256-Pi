@@ -26,8 +26,11 @@
     background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     font-size: 15px; line-height: 1.6;
-    /* Full-height layout so console fills viewport */
-    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+    /* Full-height layout so console fills viewport.
+       100dvh = dynamic viewport height — accounts for Android Chrome
+       address bar. Falls back to 100vh on older browsers. */
+    display: flex; flex-direction: column;
+    height: 100vh; height: 100dvh; overflow: hidden;
   }
 
   /* ── Navigation ─────────────────────────────────────────── */
@@ -56,7 +59,8 @@
   .s-part { display: flex; align-items: center; }
   .s-sep  { color: var(--border); margin: 0 8px; }
   .s-call    { color: var(--con-cyan); font-weight: bold; }
-  .s-transport { color: var(--con-dim); }
+  .s-transport         { color: var(--con-dim); }
+  .s-transport-connected { color: var(--con-green); }
   .s-conn-ok   { color: var(--con-green); }
   .s-conn-busy { color: var(--con-yellow); }
   .s-conn-off  { color: var(--red); }
@@ -223,6 +227,55 @@
     display: none;   /* show text only on wider screens */
   }
   @media (min-width: 480px) { .hf-logo span { display: inline; } }
+
+  /* ── Mobile layout ──────────────────────────────────────── */
+  @media (max-width: 600px) {
+    /* Hide sidebar on portrait phones — landscape shows it fine */
+    #sidebar { display: none; }
+    #footer  { display: none; }
+
+    /* Topbar: prevent wrapping — it steals height from the console.
+       Hide the ws-badge (it wraps to a second line on narrow screens)
+       and compress nav buttons. */
+    .topbar {
+      padding: 5px 8px; gap: 4px;
+      flex-wrap: nowrap; overflow: hidden;
+    }
+    #ws-badge { display: none; }
+    .nav-btn  { padding: 4px 8px; font-size: 0.78rem; }
+    .hf-logo img { width: 24px; height: 24px; }
+
+    /* Status bar: single line, no wrapping, scrolls horizontally
+       if needed rather than pushing content down */
+    #status-bar {
+      font-size: 10px; padding: 2px 8px;
+      flex-wrap: nowrap; overflow-x: auto;
+      white-space: nowrap;
+    }
+    #status-bar::-webkit-scrollbar { display: none; }
+    .s-sep { margin: 0 4px; }
+
+    /* Input bar: prominent tap targets, 16px prevents iOS/Android zoom */
+    #input-bar  { padding: 8px 8px; gap: 6px; flex-shrink: 0; }
+    #msg-input  { font-size: 16px; min-width: 0; }
+    #send-btn   { padding: 8px 16px; font-size: 0.9rem; flex-shrink: 0; }
+    #input-prompt { display: none; } /* hide "hf256>" prompt on mobile */
+
+    /* Console message area fills all remaining space */
+    #console-wrap { border-right: none; min-height: 0; }
+    #console-out  { font-size: 12px; padding: 6px 8px; }
+  }
+
+  /* Landscape phone — show sidebar since there is horizontal room */
+  @media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
+    #footer  { display: none; }
+    #sidebar { width: 160px; }
+    .topbar  { padding: 4px 8px; }
+    #status-bar { font-size: 10px; padding: 2px 8px; flex-wrap: nowrap; overflow-x: auto; }
+    #status-bar::-webkit-scrollbar { display: none; }
+    #input-bar  { padding: 6px 8px; }
+    #msg-input  { font-size: 16px; }
+  }
 </style>
 </head>
 <body>
@@ -232,7 +285,10 @@
   <a class="hf-logo" href="/status"><img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span></a><a class="nav-btn" href="/status">Status</a>
   <a class="nav-btn" href="/settings">Settings</a>
   <a class="nav-btn active" href="/console">Console</a>
+  <a class="nav-btn" href="/files">Hub Files</a>
+  <a class="nav-btn" href="/help">Help</a>
   <div class="topbar-spacer"></div>
+  <span style="font-size:11px;color:#888;margin-right:10px;letter-spacing:0.03em;">Version Alpha 0.0.1</span>
   <span id="ws-badge" style="font-size:11px;color:var(--red)">
     ⬤ Not connected
   </span>
@@ -253,7 +309,7 @@
   <span class="s-sep">│</span>
   <span class="s-part s-auth-no" id="s-auth">? Auth</span>
   <span class="s-sep">│</span>
-  <span class="s-part s-ws-off"   id="s-ws">⬤ WS</span>
+  <span class="s-part s-ws-off"   id="s-ws">⬤ Linked to Pi</span>
 </div>
 
 <!-- ── Main area ───────────────────────────────────────────── -->
@@ -267,7 +323,7 @@
     <div id="help-panel">
       <div class="h-title">Available Commands</div>
       <div><span class="h-cmd">/connect &lt;IP&gt; [port]</span>
-           &nbsp;<span class="h-desc">Connect to hub (TCP) or /connect &lt;CALL&gt; (FreeDV/ARDOP)</span></div>
+           &nbsp;<span class="h-desc">Connect to hub (TCP) or /connect &lt;CALL&gt; (FreeDV/ARDOP FM)</span></div>
       <div><span class="h-cmd">/disconnect</span>
            &nbsp;<span class="h-desc">Disconnect from hub</span></div>
       <div><span class="h-cmd">/auth &lt;password&gt;</span>
@@ -293,12 +349,14 @@
       <div><span class="h-cmd">/help</span>
            &nbsp;<span class="h-desc">Toggle this help panel</span></div>
       <div class="h-sect">Hub operator commands:</div>
-      <div><span class="h-cmd">/adduser &lt;CALL&gt; &lt;pw&gt;</span>
+      <div><span class="h-cmd">/clear</span>
+           &nbsp;<span class="h-desc">Clear the console window</span></div>
+      <div><span class="h-cmd">/adduser &lt;CALL&gt; &lt;pw&gt;</span> <span style="color:#888;font-size:10px">(hub)</span>
            &nbsp;<span class="h-desc">Add user to hub</span></div>
-      <div><span class="h-cmd">/listusers</span>
+      <div><span class="h-cmd">/listusers</span> <span style="color:#888;font-size:10px">(hub)</span>
            &nbsp;<span class="h-desc">List registered hub users</span></div>
       <div><span class="h-cmd">/storage</span>
-           &nbsp;<span class="h-desc">Show hub message storage stats</span></div>
+           &nbsp;<span class="h-desc">Show hub message storage stats (hub only)</span></div>
     </div>
 
     <div id="input-bar">
@@ -324,13 +382,9 @@
               onclick="selectTransport('freedv')">
         ○ FreeDV HF
       </button>
-      <button class="t-btn" id="t-ardop-hf"
-              onclick="selectTransport('ardop-hf')">
-        ○ ARDOP HF
-      </button>
       <button class="t-btn" id="t-ardop-fm"
               onclick="selectTransport('ardop-fm')">
-        ○ ARDOP VHF-FM
+        ○ ARDOP FM
       </button>
     </div>
 
@@ -404,7 +458,7 @@ const ST = {
   transport:     "tcp",
   connState:     0,   // 0=off 1=connecting 2=connected
   remoteCall:    null,
-  authenticated: false,
+  authenticated: {{ "true" if settings.role == "hub" else "false" }},
   helpVisible:   false,
   ws:            null,
   wsRetryTimer:  null,
@@ -469,11 +523,13 @@ function updateStatus() {
   const tLabels = {
     "tcp":      "TCP",
     "freedv":   "FreeDV",
-    "ardop-hf": "ARDOP HF",
-    "ardop-fm": "ARDOP VHF-FM"
+    "ardop-fm": "ARDOP FM"
   };
-  document.getElementById("s-transport").textContent =
-    tLabels[ST.transport] || "TCP";
+  const tEl = document.getElementById("s-transport");
+  tEl.textContent = tLabels[ST.transport] || "TCP";
+  tEl.className = ST.connState === 2
+    ? "s-part s-transport-connected"
+    : "s-part s-transport";
 
   const connEl = document.getElementById("s-conn");
   if (ST.connState === 2) {
@@ -513,18 +569,16 @@ function updateStatus() {
 // ================================================================
 // Transport selector
 // ================================================================
-const T_IDS = ["t-tcp","t-freedv","t-ardop-hf","t-ardop-fm"];
+const T_IDS = ["t-tcp","t-freedv","t-ardop-fm"];
 const T_LABELS = {
   "tcp":      "◉ TCP / Internet",
   "freedv":   "◉ FreeDV HF",
-  "ardop-hf": "◉ ARDOP HF",
-  "ardop-fm": "◉ ARDOP VHF-FM"
+  "ardop-fm": "◉ ARDOP FM"
 };
 const T_INACTIVE = {
   "tcp":      "○ TCP / Internet",
   "freedv":   "○ FreeDV HF",
-  "ardop-hf": "○ ARDOP HF",
-  "ardop-fm": "○ ARDOP VHF-FM"
+  "ardop-fm": "○ ARDOP FM"
 };
 
 function selectTransport(t) {
@@ -543,8 +597,7 @@ function selectTransport(t) {
   const labels = {
     "tcp":      "TCP/Internet",
     "freedv":   "FreeDV HF",
-    "ardop-hf": "ARDOP HF",
-    "ardop-fm": "ARDOP VHF-FM"
+    "ardop-fm": "ARDOP FM"
   };
   addSys("Transport: " + labels[t]);
   if (t !== "tcp") {
@@ -591,7 +644,7 @@ function wsConnect() {
   ST.ws.onopen = function() {
     document.getElementById("ws-badge").textContent = "⬤ Connected";
     document.getElementById("ws-badge").style.color = "var(--con-green)";
-    document.getElementById("s-ws").textContent = "⬤ WS";
+    document.getElementById("s-ws").textContent = "⬤ Linked to Pi";
     document.getElementById("s-ws").className   = "s-part s-ws-ok";
     addSys("Console connected");
     // Tell server our current state
@@ -609,7 +662,7 @@ function wsConnect() {
     document.getElementById("ws-badge").textContent = "⬤ Disconnected";
     document.getElementById("ws-badge").style.color = "var(--red)";
     document.getElementById("s-ws").className   = "s-part s-ws-off";
-    document.getElementById("s-ws").textContent = "⬤ WS";
+    document.getElementById("s-ws").textContent = "⬤ Linked to Pi";
     if (ST.connState !== 0) {
       ST.connState = 0; ST.remoteCall = null;
       ST.authenticated = false; updateStatus();
@@ -656,6 +709,8 @@ function handleWsMsg(msg) {
       break;
 
     case "chat":
+      // Suppress hub echo of our own sent messages — already shown as local echo
+      if (msg.sender && msg.sender.toUpperCase() === ST.mycall.toUpperCase()) break;
       addMsg(msg.sender, msg.text, false);
       break;
 
@@ -748,7 +803,7 @@ function handleCommand(raw) {
 
   if (command === "/whoami") {
     const tNames = {tcp:"TCP",freedv:"FreeDV HF",
-                    "ardop-hf":"ARDOP HF","ardop-fm":"ARDOP VHF-FM"};
+                    "ardop-fm":"ARDOP FM"};
     addSys("Callsign:   " + ST.mycall);
     addSys("Transport:  " + (tNames[ST.transport] || ST.transport) +
            (ST.transport === "freedv" && ST.freedvMode ?
@@ -757,18 +812,18 @@ function handleCommand(raw) {
            (ST.connState === 2 ? "Connected to " + ST.remoteCall :
             ST.connState === 1 ? "Connecting..." : "Disconnected"));
     addSys("Encryption: " + (ST.encEnabled ? "ON" : "OFF"));
-    addSys("Auth:       " + (ST.authenticated ? "Yes" : "No"));
+    addSys("Auth:       " + (ST.role === "hub" ? "Hub (no auth required)" :
+           ST.authenticated ? "Yes" : "No"));
     return;
   }
 
   if (command === "/connect") {
-    const isCallsignTransport = (ST.transport === "ardop-hf" ||
-                                  ST.transport === "ardop-fm" ||
+    const isCallsignTransport = (ST.transport === "ardop-fm" ||
                                   ST.transport === "freedv");
     if (!args) {
       if (isCallsignTransport) {
         const tName = ST.transport === "freedv" ? "FreeDV" :
-                      ST.transport === "ardop-fm" ? "ARDOP VHF-FM" : "ARDOP HF";
+                      "ARDOP FM";
         addSys("Usage: /connect <CALLSIGN>   (" + tName + " mode)");
         addSys("  Example: /connect W1AW");
       } else {
@@ -781,7 +836,7 @@ function handleCommand(raw) {
     if (isCallsignTransport) {
       const targetCall = args.split(/\s+/)[0].toUpperCase();
       const tLabel = ST.transport === "freedv" ? "FreeDV" :
-                     ST.transport === "ardop-fm" ? "ARDOP VHF-FM" : "ARDOP HF";
+                     ST.transport === "ardop-fm" ? "ARDOP FM" : "ARDOP HF";
       document.getElementById("sb-hub").textContent  = targetCall;
       document.getElementById("sb-port").textContent = "";
       addSys("Calling " + targetCall + " via " + tLabel + " ...");
@@ -823,17 +878,17 @@ function handleCommand(raw) {
     if (sp.length < 2) {
       addSys("Usage: /send <CALLSIGN> <message>"); return;
     }
-    if (!ST.authenticated) {
+    if (!ST.authenticated && ST.role !== "hub") {
       addSys("✗ Must authenticate first — use /auth <password>"); return;
     }
-    wsSend({type:"send", to: sp[0].toUpperCase(),
-            text: sp.slice(1).join(" ")});
-    addSys("Sending message to " + sp[0].toUpperCase() + "...");
+    const sendTo = sp[0].toUpperCase();
+    wsSend({type:"send", to: sendTo, text: sp.slice(1).join(" ")});
+    addSys("Transmitting to hub — waiting for confirmation...");
     return;
   }
 
   if (command === "/retrieve") {
-    if (!ST.authenticated) {
+    if (!ST.authenticated && ST.role !== "hub") {
       addSys("✗ Must authenticate first"); return;
     }
     wsSend({type:"retrieve"});
@@ -843,16 +898,22 @@ function handleCommand(raw) {
 
   if (command === "/bul") {
     if (!args) { addSys("Usage: /bul <message>"); return; }
-    if (!ST.authenticated) {
+    if (!ST.authenticated && ST.role !== "hub") {
       addSys("✗ Must authenticate first"); return;
     }
     wsSend({type:"bulletin", text:args});
-    addSys("Sending bulletin...");
+    if (ST.role === "hub") {
+      // Hub stores locally — confirmation comes back synchronously
+      addSys("Storing bulletin for all users...");
+    } else {
+      // Spoke sends over air — confirmation comes via STORE_ACK from hub
+      addSys("Sending bulletin to hub (waiting for confirmation)...");
+    }
     return;
   }
 
   if (command === "/files") {
-    if (!ST.authenticated) {
+    if (!ST.authenticated && ST.role !== "hub") {
       addSys("✗ Must authenticate first"); return;
     }
     wsSend({type:"files"});
@@ -862,7 +923,7 @@ function handleCommand(raw) {
 
   if (command === "/download") {
     if (!args) { addSys("Usage: /download <filename>"); return; }
-    if (!ST.authenticated) {
+    if (!ST.authenticated && ST.role !== "hub") {
       addSys("✗ Must authenticate first"); return;
     }
     wsSend({type:"download", filename:args});
@@ -892,6 +953,9 @@ function handleCommand(raw) {
   }
 
   if (command === "/adduser") {
+    if (ST.role !== "hub") {
+      addSys("✗ /adduser is a hub-only command"); return;
+    }
     const up = args.split(/\s+/);
     if (up.length !== 2) {
       addSys("Usage: /adduser <CALLSIGN> <password>"); return;
@@ -902,11 +966,29 @@ function handleCommand(raw) {
   }
 
   if (command === "/listusers") {
+    if (ST.role !== "hub") {
+      addSys("✗ /listusers is a hub-only command"); return;
+    }
     wsSend({type:"listusers"}); return;
   }
 
   if (command === "/storage" || command === "/stats") {
+    if (ST.role !== "hub") {
+      addSys("✗ /storage is a hub-only command"); return;
+    }
     wsSend({type:"storage"}); return;
+  }
+
+  if (command === "/clear") {
+    const outEl = document.getElementById("console-out");
+    if (outEl) outEl.innerHTML = "";
+    // Also hide the help panel if visible
+    if (ST.helpVisible) {
+      ST.helpVisible = false;
+      document.getElementById("help-panel").style.display = "none";
+    }
+    addSys("Console cleared");
+    return;
   }
 
   if (command === "/announce") {
@@ -950,7 +1032,7 @@ function submitInput() {
     if (ST.connState !== 2) {
       addSys("✗ Not connected — use /connect <IP> first"); return;
     }
-    if (!ST.authenticated) {
+    if (!ST.authenticated && ST.role !== "hub") {
       addSys("Must authenticate first — use /auth <password>"); return;
     }
     addMsg(ST.mycall, val, true);
@@ -969,6 +1051,20 @@ function toggleHelp() {
   document.getElementById("help-panel").style.display =
     ST.helpVisible ? "block" : "none";
 }
+
+// ── Silent time sync (hub only) ──────────────────────────────────────────
+(function() {
+  if ("{{ settings.role }}" !== "hub") return;
+  const now  = new Date();
+  fetch("/api/set-time", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      iso:  now.toISOString().replace(/\.\d+Z$/, "Z"),
+      unix: now.getTime() / 1000
+    })
+  }).catch(() => {});  // silent — no UI feedback needed
+})();
 
 // Input keyboard handling
 document.getElementById("msg-input").addEventListener("keydown", function(e) {

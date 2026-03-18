@@ -130,6 +130,8 @@
     <a class="hf-logo" href="/status"><img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span></a><a class="nav-btn active" href="/status">Status</a>
     <a class="nav-btn" href="/settings">Settings</a>
     <a class="nav-btn" href="/console">Console</a>
+  <a class="nav-btn" href="/files">Hub Files</a>
+  <a class="nav-btn" href="/help">Help</a>
   </nav>
 
   <h1>HF-256</h1>
@@ -185,6 +187,36 @@
       </div>
     </div>
   </div>
+
+  <!-- System Clock (hub only) -->
+  {% if settings.role == 'hub' %}
+  <div class="card" id="clock-card">
+    <h2>System Clock</h2>
+    <div id="clock-warning" style="display:none;background:rgba(210,153,34,0.12);
+         border:1px solid var(--orange);border-radius:6px;padding:10px 14px;
+         color:var(--orange);font-size:0.88rem;margin-bottom:12px">
+      ⚠ Clock is not set correctly. Message timestamps will be wrong until
+      you sync. Click <strong>Sync from browser</strong> — your device's
+      clock is used directly, no internet required.
+    </div>
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:12px">
+      The Pi has no real-time clock. The browser's clock is used to set the
+      time — this works even in hotspot mode with no internet connection.
+    </p>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span id="clock-display"
+            style="font-family:monospace;font-size:1rem;
+                   color:var(--text);min-width:220px">
+        Checking...
+      </span>
+      <button class="btn btn-primary btn-small" id="sync-btn"
+              onclick="syncTime(false)">
+        ⟳ Sync from browser
+      </button>
+      <span id="clock-status" style="font-size:0.82rem"></span>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- Modem Status -->
   <div class="card">
@@ -303,7 +335,6 @@ function refreshStatus() {
       }
 
       let html = "";
-      html += buildSvcRow("hf256",      d.hf256.running,      "HF-256 App");
       html += buildSvcRow("freedvtnc2", d.freedvtnc2.running,  "FreeDV Modem");
       html += buildSvcRow("rigctld",    d.rigctld.running,     "rigctld CAT");
       // ardopc is a subprocess managed by the portal, not a systemd service
@@ -436,9 +467,81 @@ function resetSetup() {
     .catch(() => {});
 }
 
+// ── Time sync ────────────────────────────────────────────────────────────
+function syncTime(silent) {
+  const now  = new Date();
+  const iso  = now.toISOString().replace(/\.\d+Z$/, "Z");
+  const unix = now.getTime() / 1000;
+  const btn  = document.getElementById("sync-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "Syncing..."; }
+
+  fetch("/api/set-time", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({iso, unix})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (btn) { btn.disabled = false; btn.textContent = "⟳ Sync from browser"; }
+    const el  = document.getElementById("clock-status");
+    const wrn = document.getElementById("clock-warning");
+    if (d.ok) {
+      if (d.action === "set") {
+        if (el) { el.textContent = "✓ Clock set (was " + d.drift + "s off)";
+                  el.style.color = "var(--accent)"; }
+        if (wrn) wrn.style.display = "none";
+        if (btn) { btn.className = "btn btn-secondary btn-small";
+                   btn.textContent = "⟳ Sync from browser"; }
+      } else {
+        if (el) { el.textContent = "✓ NTP active — no correction needed";
+                  el.style.color = "var(--muted)"; }
+        if (wrn) wrn.style.display = "none";
+      }
+    } else if (!silent) {
+      if (el) { el.textContent = "✗ " + (d.reason || "failed");
+                el.style.color = "var(--red)"; }
+    }
+    loadClock();
+  })
+  .catch(() => {
+    if (btn) { btn.disabled = false; btn.textContent = "⟳ Sync from browser"; }
+    const el = document.getElementById("clock-status");
+    if (el && !silent) { el.textContent = "✗ Could not reach server";
+                         el.style.color = "var(--red)"; }
+  });
+}
+
+function loadClock() {
+  fetch("/api/get-time")
+    .then(r => r.json())
+    .then(d => {
+      const el  = document.getElementById("clock-display");
+      const wrn = document.getElementById("clock-warning");
+      const btn = document.getElementById("sync-btn");
+      if (el) el.textContent = d.utc || "--";
+      // Show warning if clock is more than 24h off from browser
+      if (wrn && d.unix) {
+        const drift = Math.abs(d.unix - Date.now() / 1000);
+        if (drift > 86400) {
+          wrn.style.display = "block";
+          if (btn) btn.className = "btn btn-primary btn-small";
+        } else {
+          wrn.style.display = "none";
+          if (btn) btn.className = "btn btn-secondary btn-small";
+        }
+      }
+    })
+    .catch(() => {});
+}
+
 document.addEventListener("DOMContentLoaded", function() {
   setTimeout(refreshStatus, 2000);
   refreshInterval = setInterval(refreshStatus, 10000);
+  // Auto-sync time silently on page load (hub only)
+  syncTime(true);
+  loadClock();
+  // Refresh clock display every 30s
+  setInterval(loadClock, 30000);
 });
 
 </script>

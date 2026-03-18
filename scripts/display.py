@@ -49,7 +49,7 @@ GRAY       = (150, 150, 150)
 YELLOW     = (255, 220, 0)
 
 REFRESH_INTERVAL = 2
-AP_RESET_HOLD    = 5
+AP_RESET_HOLD    = 10   # seconds both buttons held for AP reset / shutdown
 
 
 def init_display():
@@ -188,14 +188,41 @@ def get_connection_state():
     setup_done = Path(SETUP_FLAG).exists()
     if not setup_done:
         return "SETUP NEEDED", YELLOW
-    hf256_ok    = svc_active("hf256")
-    freedv_ok   = svc_active("freedvtnc2")
-    if hf256_ok and freedv_ok:
-        return "RUNNING", GREEN
-    elif hf256_ok or freedv_ok:
+    # Query the portal API for accurate status — it knows which transport
+    # is active and whether the right services are running for that transport
+    try:
+        import urllib.request
+        with urllib.request.urlopen(
+            "http://127.0.0.1/api/service-status", timeout=2
+        ) as resp:
+            data = json.loads(resp.read())
+        overall = data.get("overall_status", "")
+        if overall == "Running":
+            return "RUNNING", GREEN
+        elif overall == "Starting":
+            return "STARTING", YELLOW
+        elif overall == "Partial":
+            return "PARTIAL", ORANGE
+        else:
+            return "STOPPED", RED
+    except Exception:
+        # Portal not reachable — check services manually as fallback
+        portal_ok = svc_active("hf256-portal")
+        if not portal_ok:
+            return "STARTING", YELLOW
         return "PARTIAL", ORANGE
-    else:
-        return "STOPPED", RED
+
+
+def get_portal_status():
+    """Fetch live status from portal API. Returns dict or {} on failure."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(
+            "http://127.0.0.1/api/service-status", timeout=2
+        ) as resp:
+            return json.loads(resp.read())
+    except Exception:
+        return {}
 
 
 def build_frame(settings, config, ip, uptime):
@@ -218,14 +245,31 @@ def build_frame(settings, config, ip, uptime):
     except Exception:
         font_lg = font_md = font_sm = font_xs = font_bold = ImageFont.load_default()
 
+    # Get live status from portal API — more accurate than reading files directly
+    api = get_portal_status()
+
     callsign = settings.get("callsign", "N0CALL")
     role     = settings.get("role", "").upper() or "?"
     wifi     = settings.get("wifi_mode", "ap").upper()
-    ssid     = settings.get("ap_ssid", "HF256-N0CALL")
     enc      = "ENC" if settings.get("encryption_enabled", True) else "OPEN"
-    mode     = config.get("FREEDV_MODE", "DATAC1")
 
-    state, state_color = get_connection_state()
+    # Mode: use portal API "mode" field (reflects active transport correctly)
+    # Falls back to FREEDV_MODE from config.env if API unavailable
+    mode = api.get("mode") or config.get("FREEDV_MODE", "DATAC1")
+
+    # Status from API
+    overall = api.get("overall_status", "")
+    if overall == "Running":
+        state, state_color = "RUNNING", GREEN
+    elif overall == "Starting":
+        state, state_color = "STARTING", YELLOW
+    elif overall == "Partial":
+        state, state_color = "PARTIAL", ORANGE
+    elif overall == "":
+        # API not reachable yet — fall back to service check
+        state, state_color = get_connection_state()
+    else:
+        state, state_color = "STOPPED", RED
 
     # Header bar
     draw.rectangle([(0, 0), (WIDTH, 34)], fill=DARK_BLUE)

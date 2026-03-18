@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HF-256 Help</title>
+<link rel="icon"             type="image/x-icon"  href="/static/favicon.ico">
+<link rel="icon"             type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+<link rel="apple-touch-icon" sizes="180x180"       href="/static/apple-touch-icon.png">
+<link rel="manifest"                               href="/static/site.webmanifest">
+<meta name="theme-color" content="#0d1117">
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #2ea043;
+    --blue: #388bfd; --orange: #d29922; --red: #da3633;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         font-size: 15px; line-height: 1.7; }
+
+  /* ── Navigation ── */
+  .topbar { display: flex; align-items: center; gap: 8px;
+            padding: 10px 16px; background: var(--surface);
+            border-bottom: 1px solid var(--border); flex-wrap: nowrap; }
+  .hf-logo { display: flex; align-items: center; gap: 6px;
+             text-decoration: none; color: var(--text);
+             font-weight: 700; font-size: 1rem; margin-right: 4px; }
+  .hf-logo img { width: 24px; height: 24px; }
+  .nav-btn { padding: 6px 14px; border-radius: 6px; text-decoration: none;
+             font-size: 0.88rem; border: 1px solid var(--border);
+             color: var(--text); background: var(--surface); white-space: nowrap; }
+  .nav-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .topbar-spacer { flex: 1; }
+  .version-label { font-size: 11px; color: #888; margin-right: 6px; }
+
+  /* ── Layout ── */
+  .page-wrap { display: flex; max-width: 1100px; margin: 0 auto;
+               padding: 24px 16px; gap: 32px; align-items: flex-start; }
+
+  /* ── Sidebar TOC ── */
+  .toc-sidebar { width: 220px; flex-shrink: 0; position: sticky; top: 20px;
+                 max-height: calc(100vh - 60px); overflow-y: auto; }
+  .toc-sidebar h3 { font-size: 0.78rem; text-transform: uppercase;
+                    letter-spacing: 0.06em; color: var(--muted); margin-bottom: 10px; }
+  .toc-sidebar ul { list-style: none; padding: 0; }
+  .toc-sidebar li { margin-bottom: 2px; }
+  .toc-sidebar a  { color: var(--muted); text-decoration: none; font-size: 0.82rem;
+                    display: block; padding: 3px 8px; border-radius: 4px;
+                    border-left: 2px solid transparent;
+                    transition: color 0.15s, border-color 0.15s; }
+  .toc-sidebar a:hover  { color: var(--text); }
+  .toc-sidebar a.active { color: var(--blue); border-left-color: var(--blue); }
+  .toc-sidebar .toc-l2  { padding-left: 18px; }
+  @media (max-width: 700px) { .toc-sidebar { display: none; } }
+
+  /* ── Main content ── */
+  .content { flex: 1; min-width: 0; }
+
+  /* ── Markdown styles ── */
+  .md h1 { font-size: 1.8rem; color: var(--blue); margin: 0 0 8px; line-height: 1.3; }
+  .md h2 { font-size: 1.2rem; color: var(--text); margin: 36px 0 12px;
+           padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .md h3 { font-size: 1rem; color: var(--text); margin: 24px 0 10px; }
+  .md h4 { font-size: 0.95rem; color: var(--muted); margin: 16px 0 8px; }
+  .md p  { margin-bottom: 14px; }
+  .md a  { color: var(--blue); text-decoration: none; }
+  .md a:hover { text-decoration: underline; }
+  .md strong { font-weight: 600; }
+  .md hr { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+  .md ul, .md ol { padding-left: 22px; margin-bottom: 14px; }
+  .md li { margin-bottom: 4px; }
+  .md code { background: var(--surface); border: 1px solid var(--border);
+             border-radius: 4px; padding: 1px 5px; font-size: 0.87em;
+             font-family: "SF Mono","Consolas","Monaco",monospace; color: #e06c75; }
+  .md pre  { background: var(--surface); border: 1px solid var(--border);
+             border-radius: var(--radius); padding: 14px 16px;
+             overflow-x: auto; margin-bottom: 16px; }
+  .md pre code { background: none; border: none; padding: 0;
+                 color: #abb2bf; font-size: 0.85rem; line-height: 1.6; }
+  .md table { width: 100%; border-collapse: collapse; margin-bottom: 18px;
+              font-size: 0.88rem; }
+  .md th { background: var(--surface); color: var(--muted); font-weight: 600;
+           padding: 8px 12px; text-align: left; font-size: 0.78rem;
+           text-transform: uppercase; letter-spacing: 0.04em;
+           border: 1px solid var(--border); }
+  .md td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
+  .md tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+  .md blockquote { border-left: 3px solid var(--blue); margin: 0 0 14px;
+                   padding: 8px 16px; color: var(--muted);
+                   background: rgba(56,139,253,0.05); border-radius: 0 4px 4px 0; }
+
+  /* ── Back to top ── */
+  .back-top { position: fixed; bottom: 24px; right: 24px;
+              background: var(--surface); border: 1px solid var(--border);
+              color: var(--muted); border-radius: 50%; width: 38px; height: 38px;
+              display: flex; align-items: center; justify-content: center;
+              font-size: 1.1rem; text-decoration: none; opacity: 0;
+              transition: opacity 0.3s; pointer-events: none; }
+  .back-top.show { opacity: 1; pointer-events: auto; }
+  .back-top:hover { color: var(--text); border-color: var(--blue); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="hf-logo" href="/status">
+    <img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span>
+  </a>
+  <a class="nav-btn" href="/status">Status</a>
+  <a class="nav-btn" href="/settings">Settings</a>
+  <a class="nav-btn" href="/console">Console</a>
+  <a class="nav-btn" href="/files">Hub Files</a>
+  <a class="nav-btn active" href="/help">Help</a>
+  <div class="topbar-spacer"></div>
+  <span class="version-label">Version Alpha 0.0.1</span>
+</div>
+
+<div class="page-wrap">
+  <nav class="toc-sidebar" id="toc-nav">
+    <h3>Contents</h3>
+    <ul id="toc-list"></ul>
+  </nav>
+  <div class="content">
+    <div class="md" id="md-body">
+<h1 id="hf-256">HF-256</h1>
+<p><strong>Encrypted store-and-forward messaging over HF radio — in a Raspberry Pi appliance.</strong></p>
+<p>HF-256 is a self-contained communication system that lets amateur radio operators exchange encrypted messages, files, and live chat across HF radio links. It runs entirely on a Raspberry Pi and is operated through a browser — no keyboard, no monitor, no command line required in normal use.</p>
+<hr />
+<h2 id="what-hf-256-does">What HF-256 Does</h2>
+<p>HF-256 creates a private, encrypted radio network between a <strong>hub station</strong> and one or more <strong>spoke stations</strong>. Every message, file, and chat is protected with AES-256-GCM encryption using a shared network key that only your group holds.</p>
+<p><strong>You can:</strong>
+- Exchange live chat messages over HF radio
+- Send store-and-forward messages to stations that are currently off the air
+- Distribute files (emergency procedures, net schedules, maps) to field stations
+- Run a hub station that holds messages and files until a field unit checks in
+- Operate over TCP/IP (internet or LAN) for testing or when radio is not needed</p>
+<p><strong>Supported transports:</strong>
+| Transport | Use case |
+|-----------|----------|
+| FreeDV HF | HF radio — fully open-source modem, no licence fees |
+| ARDOP HF | HF radio — alternative open-source modem |
+| ARDOP FM | VHF/UHF FM radio — short range, fast |
+| TCP | Internet or LAN — for testing and fixed infrastructure |</p>
+<hr />
+<h2 id="hardware">Hardware</h2>
+<p>Each HF-256 node is a <strong>Raspberry Pi 4</strong> running the HF-256 software. Any station on your network can be reached with a phone, tablet, or laptop browser — the Pi serves the interface on port 80.</p>
+<p><strong>Supported radio interfaces:</strong>
+- <strong>DigiRig Mobile</strong> — USB audio + RTS PTT, plug-and-play with most HF transceivers
+- <strong>Xiegu X6100</strong> — direct USB audio + CAT PTT via CI-V</p>
+<p>Other radios with a USB or serial PTT interface can be added through the setup wizard.</p>
+<hr />
+<h2 id="the-pitft-display">The PiTFT Display</h2>
+<p>The HF-256 Pi appliance uses an <strong>Adafruit Mini PiTFT 1.3" 240×240 colour display</strong> mounted directly on the Pi's GPIO header. It provides at-a-glance status without needing a browser and is the primary way to operate the two physical controls on the unit.</p>
+<h3 id="what-the-display-shows">What the display shows</h3>
+<p>The display shows the current operating mode and network status — including the Pi's IP address, whether it is in hotspot mode or connected to a Wi-Fi network, and the station role (hub or spoke). This is updated dynamically as the network state changes.</p>
+<p>When the IP address is shown you can type it directly into any browser on the same network to reach the HF-256 web interface.</p>
+<h3 id="physical-buttons">Physical buttons</h3>
+<p>The unit has two physical buttons. Their functions are:</p>
+<p><strong>Reset to Hotspot mode (both buttons, 10 seconds)</strong>
+Hold <strong>both buttons simultaneously for 10 seconds</strong>. The display will confirm the reset. The Pi switches back to hotspot mode broadcasting the <code>HF256-N0CALL</code> network, allowing you to reconnect and reconfigure it. Use this if you have lost access to the web interface because the Pi joined a Wi-Fi network that is no longer available.</p>
+<p><strong>Graceful shutdown (bottom button, 10 seconds)</strong>
+Hold the <strong>bottom button for approximately 10 seconds</strong> until the display shows <strong>"Shutting down"</strong>. Release the button. The Pi will complete a clean shutdown before cutting power. Always use this procedure rather than pulling the power — an unclean shutdown can corrupt the SD card.</p>
+<h3 id="when-to-use-the-buttons">When to use the buttons</h3>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lost access to web interface — Wi-Fi changed</td>
+<td>Hold both buttons 10s → reconnect to <code>HF256-N0CALL</code></td>
+</tr>
+<tr>
+<td>Powering down the unit</td>
+<td>Hold bottom button 10s → wait for "Shutting down"</td>
+</tr>
+<tr>
+<td>Normal operation</td>
+<td>No button press needed — display shows current status</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="network-roles">Network Roles</h2>
+<h3 id="hub-station">Hub Station</h3>
+<p>The hub is the centre of the network. It runs continuously, listening for incoming connections from field stations. The hub:
+- Holds messages for stations that are not currently on the air
+- Stores files available for download by any authenticated station
+- Authenticates connecting stations against a local user database
+- Does not require the operator to be present — it listens automatically</p>
+<h3 id="spoke-station">Spoke Station</h3>
+<p>A spoke is a field unit that calls into the hub. The spoke operator:
+- Connects to the hub using <code>/connect &lt;CALLSIGN&gt;</code>
+- Authenticates with <code>/auth &lt;password&gt;</code>
+- Can chat live with the hub operator, send and retrieve messages, and download files
+- Disconnects when done — the hub holds any messages for the next check-in</p>
+<hr />
+<h2 id="first-time-setup">First-Time Setup</h2>
+<p>When a HF-256 Pi is first powered on it has not yet been configured. It starts in <strong>access point mode</strong>, broadcasting its own Wi-Fi network so you can reach it from any phone, tablet, or laptop — no existing network or internet connection is required.</p>
+<p><strong>Step 1 — Connect to the HF-256 Wi-Fi hotspot</strong></p>
+<p>On your device, open Wi-Fi settings and connect to:</p>
+<ul>
+<li><strong>Network name:</strong> <code>HF256-N0CALL</code></li>
+<li><strong>Password:</strong> <code>hf256setup</code></li>
+</ul>
+<p>Once connected your device will be on the Pi's local network. No internet access will be available while connected to this hotspot — that is normal.</p>
+<p><strong>Step 2 — Open the setup page</strong></p>
+<p>Open a browser and go to either:</p>
+<ul>
+<li><code>http://hf256.local</code> — works on most phones, tablets, and modern computers</li>
+<li><code>http://192.168.4.1</code> — use this if hf256.local does not resolve</li>
+</ul>
+<p>The HF-256 setup wizard will load automatically.</p>
+<p><strong>Step 3 — Select your radio and test hardware</strong></p>
+<p>Select your radio interface (DigiRig Mobile or Xiegu X6100). The wizard will detect the serial port and audio device. Use the <strong>Test PTT</strong> and <strong>Check Audio Level</strong> buttons to confirm your radio is correctly connected before proceeding. This is the time to sort out any cable or interface issues — getting hardware confirmed here saves troubleshooting later.</p>
+<p><strong>Step 4 — Callsign and role</strong>
+Enter your callsign and select whether this Pi will be a <strong>Hub</strong> or a <strong>Spoke</strong>.</p>
+<p><strong>Step 5 — Network key</strong>
+All stations on your network must share the same AES-256 encryption key. Either generate a new key on the hub and distribute it, or paste in a key you have already received.</p>
+<p>When setup completes the Pi switches from hotspot mode to its normal operating mode. If you configured it to join an existing Wi-Fi network it will do so now — reconnect your device to your normal network and browse to the Pi's new address shown on the final setup screen. If no Wi-Fi was configured the Pi remains in hotspot mode and is always reachable at <code>192.168.4.1</code>.</p>
+<hr />
+<h2 id="the-console">The Console</h2>
+<p>The console is the main operating interface. Open it at <code>http://&lt;pi-address&gt;/console</code>.</p>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│ HF-256   Status   Settings   Console    Ver Alpha 0.0.1 │
+├──────────────────┬──────────────────────────────────┤
+│ L3LFN │ FreeDV   │ ⬤ Connected to L3RHUB            │
+├──────────────────┴──────────────────────────────────┤
+│                                                      │
+│  ★ Session ready — L3LFN — key loaded               │
+│  ★ Transport: FreeDV HF                             │
+│  ★ ✓ Connected to L3RHUB                           │
+│  ★ ✓ Authenticated — Welcome L3LFN                 │
+│  → L3LFN: Hello from the field                     │
+│  ★ ✓ Message delivered to hub                      │
+│  ← L3RHUB: Copy that, standing by                  │
+│                                                      │
+├──────────────────────────────────────────────────────┤
+│ &gt; type message or /command                          │
+└──────────────────────────────────────────────────────┘
+</code></pre>
+<p>The top of the console shows your callsign, transport mode, and connection state. Outgoing messages are shown with <code>→</code>, incoming with <code>←</code>, and system events with <code>★</code>.</p>
+<hr />
+<h2 id="typical-spoke-session">Typical Spoke Session</h2>
+<h3 id="1-select-transport">1. Select transport</h3>
+<p>The sidebar shows the available transports. Click <strong>FreeDV HF</strong> (or ARDOP, or TCP). The modem starts automatically.</p>
+<h3 id="2-connect-to-the-hub">2. Connect to the hub</h3>
+<pre><code>/connect L3RHUB
+</code></pre>
+<p>The Pi transmits a connection request over the air. On a clear channel this typically completes in 10–30 seconds. The console will show <code>✓ Connected to L3RHUB</code> when the link is up.</p>
+<h3 id="3-authenticate">3. Authenticate</h3>
+<pre><code>/auth yourpassword
+</code></pre>
+<p>Your password is sent encrypted to the hub. On success: <code>✓ Authenticated — Welcome &lt;CALLSIGN&gt;</code>.</p>
+<h3 id="4-retrieve-waiting-messages">4. Retrieve waiting messages</h3>
+<pre><code>/retrieve
+</code></pre>
+<p>The hub delivers any messages stored for you since your last check-in.</p>
+<h3 id="5-send-live-chat">5. Send live chat</h3>
+<p>Just type and press Enter. Your message appears immediately and a <code>✓ Message delivered to hub</code> confirmation appears when the hub's radio has acknowledged receipt.</p>
+<h3 id="6-send-a-message-to-an-offline-station">6. Send a message to an offline station</h3>
+<pre><code>/send W1ABC Check in at 0900Z tomorrow on 14.300
+</code></pre>
+<p>The hub stores the message. When W1ABC next checks in and runs <code>/retrieve</code>, they will receive it.</p>
+<h3 id="7-list-and-download-files">7. List and download files</h3>
+<pre><code>/files
+/download emergency_plan.pdf
+</code></pre>
+<p>The hub sends the file in chunks over the ARQ link. A progress indicator shows each chunk as it arrives. Use <code>/cancel</code> to abort a download in progress.</p>
+<h3 id="8-disconnect">8. Disconnect</h3>
+<pre><code>/disconnect
+</code></pre>
+<p>A clean disconnect packet is sent to the hub. If the link drops without a clean disconnect, both sides will time out automatically after 2 minutes of silence.</p>
+<hr />
+<h2 id="hub-operations">Hub Operations</h2>
+<p>The hub console works the same way as a spoke console, with additional commands available because no outgoing connection is needed.</p>
+<h3 id="adding-users">Adding users</h3>
+<pre><code>/adduser W1ABC secretpassword
+/adduser W2DEF anotherpassword
+</code></pre>
+<p>User credentials are stored locally on the hub Pi.</p>
+<h3 id="listing-users">Listing users</h3>
+<pre><code>/listusers
+</code></pre>
+<h3 id="checking-stored-messages-and-files">Checking stored messages and files</h3>
+<pre><code>/storage
+</code></pre>
+<p>Shows how many messages are queued for each recipient and how many files are available for download.</p>
+<h3 id="live-chat-with-a-connected-station">Live chat with a connected station</h3>
+<p>When a spoke is connected the hub operator can simply type to reply. No authentication or <code>/connect</code> is needed on the hub — the hub is always ready.</p>
+<h3 id="adding-files-for-distribution">Adding files for distribution</h3>
+<p>Open <code>http://&lt;hub-pi-address&gt;/files</code> in your browser. The <strong>Hub Files</strong> page lets you:</p>
+<ul>
+<li><strong>Upload</strong> any file by clicking the upload area or dragging and dropping — add an optional description that will be shown to spoke stations in the <code>/files</code> listing</li>
+<li><strong>Edit</strong> the description of any file already on the hub by clicking the ✎ button</li>
+<li><strong>Delete</strong> any file with the 🗑 button</li>
+</ul>
+<p>The Hub Files page is available in the navigation bar on all pages. It is accessible from any device on the same network as the hub Pi — no command line access is needed.</p>
+<p>Files are sent in 512-byte chunks over the ARQ link. On FreeDV DATAC1 at typical HF speeds a 50 KB file takes approximately 10–15 minutes. Plan accordingly.</p>
+<hr />
+<h2 id="freedv-modes">FreeDV Modes</h2>
+<p>The FreeDV mode is selected from the sidebar in the console. All stations in a QSO must use the same mode.</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Bandwidth</th>
+<th>Speed</th>
+<th>Use when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DATAC1</td>
+<td>1.25 kHz</td>
+<td>~980 bps</td>
+<td>Standard — good balance of speed and robustness</td>
+</tr>
+<tr>
+<td>DATAC3</td>
+<td>0.5 kHz</td>
+<td>~450 bps</td>
+<td>Crowded bands, narrow filters, marginal conditions</td>
+</tr>
+<tr>
+<td>DATAC4</td>
+<td>2.5 kHz</td>
+<td>~2200 bps</td>
+<td>Excellent conditions, fast file transfers</td>
+</tr>
+</tbody>
+</table>
+<p><strong>DATAC1 is recommended as the starting point.</strong> If you are having trouble completing connections, try DATAC3. If conditions are excellent and you need faster file transfers, try DATAC4.</p>
+<hr />
+<h2 id="tcp-mode-private-encrypted-internet-communications">TCP Mode — Private Encrypted Internet Communications</h2>
+<p>TCP mode connects two HF-256 stations directly over the internet or a local area network without any radio hardware. Despite the name, TCP mode is not limited to local use — it works across the public internet anywhere two stations can reach each other over port 14256.</p>
+<p><strong>Why use TCP mode:</strong></p>
+<p>When used with encryption enabled, TCP mode gives you a <strong>private, authenticated messaging platform</strong> that works anywhere in the world with an internet connection. All traffic — chat, stored messages, and file transfers — is protected with the same AES-256-GCM encryption used over the air. An eavesdropper on the network sees only encrypted ciphertext. The hub authenticates every connecting station against its user database before any traffic is exchanged.</p>
+<p>This makes TCP mode useful well beyond testing:
+- A fixed hub at an EOC or club station can be reached by members anywhere in the world
+- Operators travelling internationally can stay in contact with their home network
+- During internet-available emergencies, TCP provides instant full-speed connectivity that falls back to radio when the internet fails</p>
+<p><strong>Connecting over TCP:</strong></p>
+<pre><code>/connect 203.0.113.45
+</code></pre>
+<p>or if the hub operator has a DNS name:</p>
+<pre><code>/connect hub.example.net
+</code></pre>
+<p>The hub must have port 14256 open and reachable. For a hub behind a home router, standard port forwarding applies. Speed over TCP is limited only by the internet connection — file transfers that take 15 minutes over HF complete in seconds.</p>
+<hr />
+<h2 id="ardop-hf-alternative-hf-modem">ARDOP HF — Alternative HF Modem</h2>
+<p>ARDOP (Amateur Radio Digital Open Protocol) is an alternative HF data modem supported by HF-256. It covers the same use cases as FreeDV — point-to-point HF connections for chat, store-and-forward messaging, and file transfer — and is included for operators who already have ARDOP infrastructure or who want a second HF option.</p>
+<p><strong>FreeDV vs ARDOP HF — choosing between them:</strong></p>
+<p>FreeDV is the recommended HF transport for new deployments. It is fully open-source at every layer including the DSP codec, has no external dependencies beyond <code>freedvtnc2</code>, and its DATAC modes are purpose-designed for data. ARDOP is a mature and well-proven protocol with a large existing user base and strong interoperability with other ARDOP software.</p>
+<p>Both operate over the same HF transceiver hardware. If your group already uses ARDOP for other applications, selecting ARDOP HF in HF-256 lets you share frequency plans and operating schedules with that existing network.</p>
+<p><strong>Selecting ARDOP HF:</strong> Click <strong>ARDOP HF</strong> in the console sidebar. The modem starts automatically. Connect and operate identically to FreeDV mode — the transport layer is transparent to the user.</p>
+<hr />
+<h2 id="ardop-fm-local-vhfuhf-and-fm-band-communications">ARDOP FM — Local VHF/UHF and FM Band Communications</h2>
+<p>ARDOP FM uses the same ARDOP protocol but is optimised for <strong>FM rather than SSB</strong>, making it suitable for VHF, UHF, and any FM-capable band. This opens HF-256 to a much wider range of local and regional communication scenarios that do not require HF propagation.</p>
+<p><strong>Use cases for ARDOP FM:</strong></p>
+<ul>
+<li><strong>Local emergency nets</strong> — a club or ARES group running ARDOP FM on a 2m or 70cm FM simplex or repeater frequency gets the full HF-256 feature set (encryption, store-and-forward, file distribution) at VHF speeds and ranges</li>
+<li><strong>Linked repeater systems</strong> — where a repeater network connects a wide area, ARDOP FM can carry HF-256 traffic across that network giving store-and-forward capability without internet</li>
+<li><strong>Field day and portable operations</strong> — a handheld or mobile radio with a DigiRig interface is all that is needed; no HF antenna or licence upgrade required for operators holding a Technician class licence</li>
+<li><strong>Backup path</strong> — a site that normally uses internet TCP can fall back to ARDOP FM on VHF when both internet and HF are unavailable</li>
+</ul>
+<p><strong>Speed:</strong> ARDOP FM operates considerably faster than HF modes. On a clear VHF FM path, data rates of several kilobits per second are achievable, making file transfers that would take many minutes on HF complete in seconds.</p>
+<p><strong>Selecting ARDOP FM:</strong> Click <strong>ARDOP FM</strong> in the console sidebar. The same DigiRig Mobile or compatible USB audio interface used for HF works on VHF — simply connect it to your VHF/UHF radio instead.</p>
+<hr />
+<h2 id="command-reference">Command Reference</h2>
+<h3 id="connection">Connection</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/connect &lt;CALLSIGN&gt;</code></td>
+<td>Connect to a hub station (FreeDV/ARDOP) or <code>/connect &lt;IP&gt;</code> (TCP)</td>
+</tr>
+<tr>
+<td><code>/disconnect</code></td>
+<td>Cleanly disconnect from the hub</td>
+</tr>
+</tbody>
+</table>
+<h3 id="authentication">Authentication</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/auth &lt;password&gt;</code></td>
+<td>Authenticate with the hub</td>
+</tr>
+<tr>
+<td><code>/encrypt on\|off</code></td>
+<td>Toggle AES-256-GCM encryption</td>
+</tr>
+<tr>
+<td><code>/whoami</code></td>
+<td>Show callsign, transport, connection and auth status</td>
+</tr>
+</tbody>
+</table>
+<h3 id="messaging">Messaging</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(type + Enter)</td>
+<td>Send live chat to connected hub</td>
+</tr>
+<tr>
+<td><code>/send &lt;CALL&gt; &lt;message&gt;</code></td>
+<td>Store a message for an offline station</td>
+</tr>
+<tr>
+<td><code>/retrieve</code></td>
+<td>Retrieve messages stored for you at the hub</td>
+</tr>
+</tbody>
+</table>
+<h3 id="file-transfer">File transfer</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/files</code></td>
+<td>List files available on the hub</td>
+</tr>
+<tr>
+<td><code>/download &lt;filename&gt;</code></td>
+<td>Download a file from the hub</td>
+</tr>
+<tr>
+<td><code>/cancel</code></td>
+<td>Cancel a download in progress</td>
+</tr>
+</tbody>
+</table>
+<h3 id="freedv">FreeDV</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/announce &lt;message&gt;</code></td>
+<td>Broadcast to all listening stations (no connection needed)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="hub-only">Hub only</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/adduser &lt;CALL&gt; &lt;password&gt;</code></td>
+<td>Add a user to the hub</td>
+</tr>
+<tr>
+<td><code>/listusers</code></td>
+<td>List all registered users</td>
+</tr>
+<tr>
+<td><code>/storage</code></td>
+<td>Show queued messages and available files</td>
+</tr>
+</tbody>
+</table>
+<h3 id="general">General</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/clear</code></td>
+<td>Clear the console window</td>
+</tr>
+<tr>
+<td><code>/help</code></td>
+<td>Show the command reference panel</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="encryption">Encryption</h2>
+<p>All traffic is encrypted with <strong>AES-256-GCM</strong> using a 256-bit network key shared among all stations. The key never travels over the air. Every message, file chunk, and authentication packet is individually encrypted with a random 96-bit IV — no two transmissions look the same even if the content is identical.</p>
+<p>The network key is stored in <code>/etc/hf256/network.key</code> on each Pi. Protect it as you would any cryptographic credential. If the key is compromised, generate a new one on the hub and distribute it to all stations out-of-band.</p>
+<p>Store-and-forward messages are <strong>double encrypted</strong>: first with the network key when sent over the air, and stored on the hub encrypted again so that hub storage compromise does not expose message content.</p>
+<h2 id="global-use-and-regulatory-compliance">Global Use and Regulatory Compliance</h2>
+<p>HF-256 is designed to be useful to amateur radio operators worldwide. Radio regulations differ significantly between countries — in particular, the rules governing encryption over amateur radio vary.</p>
+<p><strong>In some countries</strong>, including the United States (47 CFR Part 97), Canada, and many others, encryption of amateur radio transmissions is either prohibited or restricted to specific circumstances. <strong>HF-256 fully supports plaintext operation</strong> to comply with these rules.</p>
+<p>To disable encryption:</p>
+<pre><code>/encrypt off
+</code></pre>
+<p>The status bar will show <strong>PLAINTEXT</strong> as a reminder whenever encryption is off. All message content, file transfers, and chat will be transmitted in the clear. Re-enable at any time with <code>/encrypt on</code>.</p>
+<p><strong>In other countries</strong> where encryption is permitted or where HF-256 is being used on licensed private frequencies or in emergency management contexts, the full AES-256-GCM encryption capability can be used.</p>
+<p><strong>It is the responsibility of each operator to understand and comply with the laws and licence conditions that apply in their jurisdiction.</strong> If you are unsure, operate in plaintext mode and consult your national amateur radio society.</p>
+<p>The network key is only used when encryption is enabled. Plaintext mode stations and encrypted stations cannot communicate directly — all stations in a session must use the same mode. The hub operator can enforce this by ensuring all registered users configure their stations consistently.</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<p><strong>Connection attempts time out / no CONN_ACK received</strong>
+- Confirm the hub Pi has FreeDV selected and the modem is running (green status on the hub's Status page)
+- Check that both stations are on the same frequency and mode
+- Try DATAC3 — it is more robust on marginal paths
+- The spoke will retry automatically up to 5 times before giving up</p>
+<p><strong>Authentication times out after connecting</strong>
+- Check that your callsign is registered on the hub (<code>/listusers</code> on the hub console)
+- Verify the password is correct
+- Confirm both stations have the same network key loaded (Status page shows key status)</p>
+<p><strong>File download stalls mid-transfer</strong>
+- This is usually RF — the ARQ will retry automatically up to 3 times per chunk
+- If the link drops, use <code>/disconnect</code> and reconnect to restart the session
+- Use <code>/cancel</code> to abort cleanly then try again</p>
+<p><strong>Hub shows "KISS socket closed" and restarts the listener</strong>
+- This is normal after a disconnect — the listener restarts automatically
+- If it happens repeatedly without any connection attempt, check that <code>freedvtnc2</code> is running on the Status page</p>
+<p><strong>Both sides disconnected but the console still shows Connected</strong>
+- The inactivity watchdog will disconnect after 2 minutes of silence
+- You can force disconnect with <code>/disconnect</code> at any time</p>
+<p><strong>No audio / PTT not keying</strong>
+- Visit the Status page and run the PTT test
+- Check the audio card number in Settings matches the device shown by <code>arecord -l</code>
+- For DigiRig: confirm the USB serial port is <code>/dev/ttyUSB0</code>
+- For Xiegu X6100: confirm the CI-V baud rate is 19200</p>
+<hr />
+<h2 id="file-locations-on-the-pi">File Locations on the Pi</h2>
+<pre><code>/etc/hf256/
+├── network.key          ← AES-256 network key (protect this)
+├── settings.json        ← Station configuration
+└── config.env           ← Modem startup parameters
+
+/home/pi/.hf256/
+├── passwords.json       ← Hub user database (hub only)
+├── hub_files/           ← Files available for download (hub only)
+│   ├── document.pdf
+│   └── document.pdf.desc
+└── hub_messages/        ← Stored messages per recipient (hub only)
+    └── W1ABC/
+        └── 1700000000000
+
+/opt/hf256/
+├── portal/              ← Web portal (Flask)
+└── hf256/               ← Core Python package
+</code></pre>
+<hr />
+<p><em>HF-256 — Version Alpha 0.0.1</em></p>
+    </div>
+  </div>
+</div>
+
+<a class="back-top" id="back-top" href="#" title="Back to top">↑</a>
+
+<script>
+(function() {
+  const body     = document.getElementById('md-body');
+  const tocList  = document.getElementById('toc-list');
+  const headings = body.querySelectorAll('h2, h3');
+  const backTop  = document.getElementById('back-top');
+
+  headings.forEach((h, i) => {
+    if (!h.id) h.id = 'sec-' + i;
+    const li = document.createElement('li');
+    const a  = document.createElement('a');
+    a.href = '#' + h.id;
+    a.textContent = h.textContent;
+    if (h.tagName === 'H3') li.classList.add('toc-l2');
+    li.appendChild(a);
+    tocList.appendChild(li);
+  });
+
+  const links = tocList.querySelectorAll('a');
+  window.addEventListener('scroll', () => {
+    backTop.classList.toggle('show', window.scrollY > 300);
+    let current = '';
+    headings.forEach(h => {
+      if (h.getBoundingClientRect().top <= 80) current = h.id;
+    });
+    links.forEach(a => a.classList.toggle(
+      'active', a.getAttribute('href') === '#' + current
+    ));
+  }, { passive: true });
+})();
+</script>
+</body>
+</html>

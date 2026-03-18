@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HF-256 Hub Files</title>
+<link rel="icon"             type="image/x-icon"  href="/static/favicon.ico">
+<link rel="icon"             type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+<link rel="apple-touch-icon" sizes="180x180"       href="/static/apple-touch-icon.png">
+<link rel="manifest"                               href="/static/site.webmanifest">
+<meta name="theme-color" content="#0d1117">
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #2ea043;
+    --blue: #388bfd; --orange: #d29922; --red: #da3633;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         font-size: 15px; line-height: 1.6; }
+  .container { max-width: 720px; margin: 0 auto; padding: 20px 16px; }
+
+  /* ── Navigation ── */
+  .topbar { display: flex; align-items: center; gap: 8px;
+            padding: 10px 16px; background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            flex-wrap: nowrap; }
+  .hf-logo { display: flex; align-items: center; gap: 6px;
+             text-decoration: none; color: var(--text);
+             font-weight: 700; font-size: 1rem; margin-right: 4px; }
+  .hf-logo img { width: 24px; height: 24px; }
+  .nav-btn { padding: 6px 14px; border-radius: 6px;
+             text-decoration: none; font-size: 0.88rem;
+             border: 1px solid var(--border); color: var(--text);
+             background: var(--surface); white-space: nowrap; }
+  .nav-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .topbar-spacer { flex: 1; }
+  .version-label { font-size: 11px; color: #888; margin-right: 6px; }
+
+  /* ── Cards ── */
+  h1 { font-size: 1.4rem; color: var(--blue); margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 20px; font-size: 0.9rem; }
+  .card { background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 0.95rem; font-weight: 600; color: var(--muted);
+             text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 14px; }
+
+  /* ── Upload form ── */
+  .upload-area { border: 2px dashed var(--border); border-radius: var(--radius);
+                 padding: 28px 20px; text-align: center; cursor: pointer;
+                 transition: border-color 0.2s, background 0.2s; }
+  .upload-area:hover, .upload-area.dragover {
+    border-color: var(--blue); background: rgba(56,139,253,0.05); }
+  .upload-area input[type=file] { display: none; }
+  .upload-icon { font-size: 2rem; margin-bottom: 8px; }
+  .upload-hint { color: var(--muted); font-size: 0.88rem; margin-top: 4px; }
+  .upload-selected { color: var(--accent); font-size: 0.88rem;
+                     margin-top: 6px; font-weight: 500; }
+  .field-row { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+  .field-row label { font-size: 0.82rem; color: var(--muted); }
+  .field-row input[type=text] {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; color: var(--text);
+    font-size: 0.9rem; width: 100%; }
+  .field-row input[type=text]:focus { outline: none; border-color: var(--blue); }
+
+  /* ── Buttons ── */
+  .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer;
+         font-size: 0.88rem; font-weight: 600; transition: opacity 0.15s; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary  { background: var(--blue);   color: #fff; }
+  .btn-danger   { background: var(--red);    color: #fff; }
+  .btn-secondary{ background: var(--surface); color: var(--text);
+                  border: 1px solid var(--border); }
+  .btn-small    { padding: 4px 10px; font-size: 0.8rem; }
+  .btn-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+
+  /* ── File table ── */
+  .file-table { width: 100%; border-collapse: collapse; }
+  .file-table th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase;
+                   letter-spacing: 0.05em; padding: 0 8px 10px 0;
+                   text-align: left; border-bottom: 1px solid var(--border); }
+  .file-table td { padding: 10px 8px 10px 0; border-bottom: 1px solid var(--border);
+                   vertical-align: top; }
+  .file-table tr:last-child td { border-bottom: none; }
+  .file-name { font-weight: 600; font-size: 0.9rem; word-break: break-all; }
+  .file-desc { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
+  .file-desc-input { background: var(--bg); border: 1px solid var(--border);
+                     border-radius: 4px; padding: 4px 7px; color: var(--text);
+                     font-size: 0.82rem; width: 100%; }
+  .file-desc-input:focus { outline: none; border-color: var(--blue); }
+  .file-size { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
+  .actions-col { white-space: nowrap; text-align: right; }
+  .empty-state { text-align: center; padding: 32px 0; color: var(--muted); }
+  .empty-icon  { font-size: 2.5rem; margin-bottom: 8px; }
+
+  /* ── Alerts ── */
+  .alert { padding: 10px 14px; border-radius: 6px; font-size: 0.88rem;
+           margin-top: 12px; display: none; }
+  .alert-ok  { background: rgba(46,160,67,0.15); border: 1px solid var(--accent);
+               color: var(--accent); }
+  .alert-err { background: rgba(218,54,51,0.15); border: 1px solid var(--red);
+               color: var(--red); }
+  .alert.show { display: block; }
+
+  /* ── Hub-only notice ── */
+  .hub-only-notice { background: rgba(210,153,34,0.12);
+                     border: 1px solid var(--orange); border-radius: var(--radius);
+                     padding: 12px 16px; margin-bottom: 16px;
+                     color: var(--orange); font-size: 0.88rem; }
+
+  /* ── Progress bar ── */
+  .progress-wrap { margin-top: 10px; display: none; }
+  .progress-wrap.show { display: block; }
+  .progress-bar-bg { background: var(--border); border-radius: 4px;
+                     height: 6px; overflow: hidden; }
+  .progress-bar-fill { background: var(--blue); height: 100%;
+                       border-radius: 4px; width: 0%;
+                       transition: width 0.2s; }
+  .progress-label { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body data-role="{{ settings.role or '' }}">
+
+<!-- ── Top navigation bar ─────────────────────────────────────── -->
+<div class="topbar">
+  <a class="hf-logo" href="/status">
+    <img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span>
+  </a>
+  <a class="nav-btn" href="/status">Status</a>
+  <a class="nav-btn" href="/settings">Settings</a>
+  <a class="nav-btn" href="/console">Console</a>
+  <a class="nav-btn" href="/help">Help</a>
+  <a class="nav-btn active" href="/files">Hub Files</a>
+  <div class="topbar-spacer"></div>
+  <span class="version-label">Version Alpha 0.0.1</span>
+</div>
+
+<div class="container">
+  <h1>Hub File Library</h1>
+  <p class="subtitle">Files stored here are available for download by any authenticated spoke station.</p>
+
+  {% if settings.role != 'hub' %}
+  <div class="hub-only-notice">
+    ⚠ This station is configured as a <strong>spoke</strong>. Hub file management
+    is only available on a hub station. Files are managed on the hub Pi.
+  </div>
+  {% endif %}
+
+  <!-- ── Upload card ──────────────────────────────────────────── -->
+  <div class="card">
+    <h2>Add File</h2>
+
+    <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div class="upload-icon">📁</div>
+      <div>Click to select a file, or drag and drop here</div>
+      <div class="upload-hint">Any file type — PDF, text, image, archive</div>
+      <div class="upload-selected" id="selected-name"></div>
+      <input type="file" id="file-input" onchange="onFileSelected(this)">
+    </div>
+
+    <div class="field-row">
+      <label for="file-desc">Description (optional — shown to spoke stations)</label>
+      <input type="text" id="file-desc" placeholder="e.g. District 5 Emergency Plan, Rev 3">
+    </div>
+
+    <div class="progress-wrap" id="upload-progress">
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <div class="progress-label" id="progress-label">Uploading...</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="upload-btn" onclick="uploadFile()" disabled>
+        ⬆ Upload File
+      </button>
+    </div>
+
+    <div class="alert alert-ok"  id="upload-ok"></div>
+    <div class="alert alert-err" id="upload-err"></div>
+  </div>
+
+  <!-- ── File list card ───────────────────────────────────────── -->
+  <div class="card">
+    <h2>Available Files <span id="file-count" style="color:var(--muted);font-weight:400"></span></h2>
+
+    <div id="file-list-wrap">
+      <div class="empty-state" id="loading-state">
+        <div class="upload-icon">⏳</div>
+        <div>Loading files...</div>
+      </div>
+      <table class="file-table" id="file-table" style="display:none">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Size</th>
+            <th style="text-align:right">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="file-tbody"></tbody>
+      </table>
+      <div class="empty-state" id="empty-state" style="display:none">
+        <div class="empty-icon">📭</div>
+        <div>No files yet — upload one above</div>
+      </div>
+    </div>
+
+    <div class="alert alert-ok"  id="list-ok"></div>
+    <div class="alert alert-err" id="list-err"></div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────
+let selectedFile = null;
+const isHub = document.body.dataset.role === 'hub';
+
+// ── Drag and drop ─────────────────────────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) setSelectedFile(file);
+});
+
+function onFileSelected(input) {
+  if (input.files[0]) setSelectedFile(input.files[0]);
+}
+
+function setSelectedFile(file) {
+  selectedFile = file;
+  document.getElementById('selected-name').textContent = file.name + ' (' + fmtSize(file.size) + ')';
+  document.getElementById('upload-btn').disabled = !isHub;
+}
+
+// ── Upload ─────────────────────────────────────────────────────────────────
+function uploadFile() {
+  if (!selectedFile) return;
+  if (!isHub) {
+    showAlert('upload-err', '✗ File management is only available on a hub station');
+    return;
+  }
+
+  const desc    = document.getElementById('file-desc').value.trim();
+  const fd      = new FormData();
+  fd.append('file', selectedFile);
+  fd.append('description', desc);
+
+  hideAlerts('upload');
+  const prog  = document.getElementById('upload-progress');
+  const fill  = document.getElementById('progress-fill');
+  const label = document.getElementById('progress-label');
+  prog.classList.add('show');
+  fill.style.width = '0%';
+  label.textContent = 'Uploading ' + selectedFile.name + '...';
+  document.getElementById('upload-btn').disabled = true;
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/hub-files/upload');
+
+  xhr.upload.onprogress = e => {
+    if (e.lengthComputable) {
+      const pct = Math.round(e.loaded / e.total * 100);
+      fill.style.width = pct + '%';
+      label.textContent = 'Uploading... ' + pct + '%';
+    }
+  };
+
+  xhr.onload = () => {
+    prog.classList.remove('show');
+    document.getElementById('upload-btn').disabled = false;
+    if (xhr.status === 200) {
+      const r = JSON.parse(xhr.responseText);
+      if (r.ok) {
+        showAlert('upload-ok', '✓ ' + r.name + ' uploaded (' + fmtSize(r.size) + ')');
+        selectedFile = null;
+        document.getElementById('selected-name').textContent = '';
+        document.getElementById('file-desc').value = '';
+        document.getElementById('file-input').value = '';
+        document.getElementById('upload-btn').disabled = true;
+        loadFiles();
+      } else {
+        showAlert('upload-err', '✗ ' + (r.error || 'Upload failed'));
+      }
+    } else {
+      showAlert('upload-err', '✗ Upload failed (HTTP ' + xhr.status + ')');
+    }
+  };
+
+  xhr.onerror = () => {
+    prog.classList.remove('show');
+    document.getElementById('upload-btn').disabled = false;
+    showAlert('upload-err', '✗ Network error during upload');
+  };
+
+  xhr.send(fd);
+}
+
+// ── Load file list ─────────────────────────────────────────────────────────
+function loadFiles() {
+  fetch('/api/hub-files')
+    .then(r => r.json())
+    .then(data => renderFiles(data.files || []))
+    .catch(() => {
+      document.getElementById('loading-state').style.display = 'none';
+      showAlert('list-err', '✗ Could not load file list');
+    });
+}
+
+function renderFiles(files) {
+  document.getElementById('loading-state').style.display = 'none';
+  const table  = document.getElementById('file-table');
+  const empty  = document.getElementById('empty-state');
+  const tbody  = document.getElementById('file-tbody');
+  const count  = document.getElementById('file-count');
+
+  count.textContent = files.length ? '(' + files.length + ')' : '';
+
+  if (!files.length) {
+    table.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+
+  table.style.display = 'table';
+  empty.style.display = 'none';
+  tbody.innerHTML = '';
+
+  files.forEach(f => {
+    const tr = document.createElement('tr');
+    tr.id = 'row-' + CSS.escape(f.name);
+    tr.innerHTML = `
+      <td>
+        <div class="file-name">${esc(f.name)}</div>
+        <div class="file-desc" id="desc-text-${esc(f.name)}">${esc(f.description) || '<span style="color:#555">No description</span>'}</div>
+        <input type="text" class="file-desc-input" id="desc-input-${esc(f.name)}"
+               value="${esc(f.description)}" placeholder="Add description..."
+               style="display:none; margin-top:4px;"
+               onkeydown="descKeydown(event, '${esc(f.name)}')">
+      </td>
+      <td class="file-size">${fmtSize(f.size)}</td>
+      <td class="actions-col">
+        ${isHub ? `
+        <button class="btn btn-secondary btn-small" onclick="editDesc('${esc(f.name)}')" id="edit-btn-${esc(f.name)}" title="Edit description">✎</button>
+        <button class="btn btn-danger btn-small" onclick="deleteFile('${esc(f.name)}')" title="Delete file">🗑</button>
+        ` : ''}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Description editing ────────────────────────────────────────────────────
+function editDesc(name) {
+  const textEl  = document.getElementById('desc-text-' + CSS.escape(name));
+  const inputEl = document.getElementById('desc-input-' + CSS.escape(name));
+  const btnEl   = document.getElementById('edit-btn-' + CSS.escape(name));
+
+  if (inputEl.style.display === 'none') {
+    // Enter edit mode
+    textEl.style.display  = 'none';
+    inputEl.style.display = 'block';
+    inputEl.focus();
+    inputEl.select();
+    btnEl.textContent = '✓';
+    btnEl.title = 'Save description';
+  } else {
+    // Save
+    saveDesc(name);
+  }
+}
+
+function descKeydown(e, name) {
+  if (e.key === 'Enter')  { e.preventDefault(); saveDesc(name); }
+  if (e.key === 'Escape') { cancelDesc(name); }
+}
+
+function saveDesc(name) {
+  const inputEl = document.getElementById('desc-input-' + CSS.escape(name));
+  const desc    = inputEl.value.trim();
+
+  fetch('/api/hub-files/description', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, description: desc})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      const textEl = document.getElementById('desc-text-' + CSS.escape(name));
+      textEl.innerHTML = desc ? esc(desc) : '<span style="color:#555">No description</span>';
+      textEl.style.display  = 'block';
+      inputEl.style.display = 'none';
+      const btnEl = document.getElementById('edit-btn-' + CSS.escape(name));
+      btnEl.textContent = '✎';
+      btnEl.title = 'Edit description';
+    } else {
+      showAlert('list-err', '✗ Could not save description');
+    }
+  })
+  .catch(() => showAlert('list-err', '✗ Network error saving description'));
+}
+
+function cancelDesc(name) {
+  const textEl  = document.getElementById('desc-text-' + CSS.escape(name));
+  const inputEl = document.getElementById('desc-input-' + CSS.escape(name));
+  const btnEl   = document.getElementById('edit-btn-' + CSS.escape(name));
+  textEl.style.display  = 'block';
+  inputEl.style.display = 'none';
+  btnEl.textContent = '✎';
+  btnEl.title = 'Edit description';
+}
+
+// ── Delete ─────────────────────────────────────────────────────────────────
+function deleteFile(name) {
+  if (!confirm('Delete "' + name + '"?\n\nThis cannot be undone.')) return;
+
+  fetch('/api/hub-files/delete', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      showAlert('list-ok', '✓ ' + name + ' deleted');
+      loadFiles();
+    } else {
+      showAlert('list-err', '✗ ' + (data.error || 'Delete failed'));
+    }
+  })
+  .catch(() => showAlert('list-err', '✗ Network error during delete'));
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function fmtSize(bytes) {
+  if (bytes < 1024)        return bytes + ' B';
+  if (bytes < 1024*1024)   return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1024/1024).toFixed(1) + ' MB';
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+          .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function showAlert(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+function hideAlerts(prefix) {
+  [prefix+'-ok', prefix+'-err'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('show');
+  });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+loadFiles();
+</script>
+</body>
+</html>

@@ -210,44 +210,9 @@
     </div>
   </div>
 
-  <!-- Step 3: FreeDV Mode -->
+  <!-- Step 3: Audio Check -->
   <div class="card">
-    <h2><span class="step-badge">3</span> FreeDV Mode</h2>
-    <div class="mode-grid">
-      <div class="mode-card selected" data-mode="DATAC1"
-           onclick="selectMode('DATAC1', this)">
-        <div class="mode-name">DATAC1</div>
-        <div class="mode-bw">~2.5kHz &bull; Balanced</div>
-        <div class="mode-bw" style="margin-top:4px;color:#2ea043">
-          ✓ Recommended
-        </div>
-      </div>
-      <div class="mode-card" data-mode="DATAC3"
-           onclick="selectMode('DATAC3', this)">
-        <div class="mode-name">DATAC3</div>
-        <div class="mode-bw">~2.0kHz &bull; Narrow</div>
-        <div class="mode-bw" style="margin-top:4px">
-          Crowded bands
-        </div>
-      </div>
-      <div class="mode-card" data-mode="DATAC4"
-           onclick="selectMode('DATAC4', this)">
-        <div class="mode-name">DATAC4</div>
-        <div class="mode-bw">~3.0kHz &bull; Wide</div>
-        <div class="mode-bw" style="margin-top:4px">
-          Better propagation
-        </div>
-      </div>
-    </div>
-    <div class="alert alert-info" style="margin-top:14px">
-      All stations on your network must use the same FreeDV mode.
-      DATAC1 is recommended for most HF conditions.
-    </div>
-  </div>
-
-  <!-- Step 4: Audio Check -->
-  <div class="card">
-    <h2><span class="step-badge">4</span> Audio Level Check</h2>
+    <h2><span class="step-badge">3</span> Audio Level Check</h2>
     <p style="color:var(--muted);font-size:0.88rem;margin-bottom:12px">
       Tune your radio to a quiet frequency and check the receive
       audio level. The meter should show activity when signals
@@ -266,10 +231,12 @@
 
   <!-- Complete Setup -->
   <div class="card">
-    <h2><span class="step-badge">5</span> Complete Setup</h2>
+    <h2><span class="step-badge">4</span> Complete Setup</h2>
     <p style="color:var(--muted);font-size:0.88rem;margin-bottom:14px">
       This writes the hardware configuration and starts the FreeDV
-      modem. You will then configure your callsign, encryption key,
+      modem with DATAC1 (recommended default). You can change the
+      FreeDV mode at any time from the <strong>Console</strong> sidebar.
+      You will then configure your callsign, encryption key,
       and station role on the <strong>Settings</strong> page.
     </p>
     <button class="btn btn-primary" id="complete-btn"

@@ -1,15 +1,20 @@
 [Unit]
-Description=HF-256 WiFi Mode Restore
+Description=HF-256 WiFi Mode Manager
+# Wait for the wireless hardware and rfkill to be fully available
+After=sys-subsystem-net-devices-wlan0.device rfkill.target
+# Also wait for any existing network services to settle
 After=network-pre.target
-Before=network.target hostapd.service
-Wants=network-pre.target
+Before=hf256-portal.service
+Wants=sys-subsystem-net-devices-wlan0.device
+
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-TimeoutStartSec=30
-ExecStart=/opt/hf256/scripts/hf256-wifi-restore.sh
-IgnoreExitCode=yes
+ExecStartPre=/bin/sleep 3
+ExecStart=/opt/hf256/scripts/wifi-mode-boot.sh
+TimeoutStartSec=120
 StandardOutput=journal
 StandardError=journal
+
 [Install]
 WantedBy=multi-user.target

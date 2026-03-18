@@ -41,12 +41,31 @@ PKT_DATA_NAK  = 0x06          # NAK/retry:   body = [seq:1]
 PKT_DISC      = 0x07          # Disconnect request
 PKT_DISC_ACK  = 0x08          # Disconnect acknowledged
 PKT_ANNOUNCE  = 0x09          # Broadcast to all; dst = "*"
+PKT_KEEPALIVE = 0x0A          # Keepalive ping — no payload, no ACK
 
 BROADCAST = "*"               # Wildcard destination for announce
 
 # ARQ parameters
-ARQ_MAX_RETRIES = 5
-ARQ_TIMEOUT     = 60.0        # seconds per attempt
+ARQ_MAX_RETRIES = 3           # 3 retries is sufficient; 5 was too many
+# ARQ_TIMEOUT is computed per-packet based on size — see _arq_timeout()
+
+def _arq_timeout(data_len: int) -> float:
+    """
+    Compute ARQ timeout for a payload of data_len bytes.
+    FreeDV DATAC1 effective throughput ~980 bps (~122 bytes/s).
+    Base is 12s to account for hub thread dispatch latency (~3-5s)
+    plus the round-trip airtime.
+    Formula: 12s base + 1s per 50 bytes, capped at 60s.
+    Examples:
+      39  bytes → 12.8s   (auth, small commands)
+      79  bytes → 13.6s   (auth with longer callsign)
+      512 bytes → 22.2s   (file chunk)
+      604 bytes → 24.1s   (file chunk with overhead)
+    """
+    t = 12.0 + (data_len / 50.0)
+    return min(t, 60.0)
+
+ARQ_TIMEOUT = 60.0  # kept for reference, use _arq_timeout() instead
 
 # KISS constants (matches hf256/kiss.py)
 FEND      = 0xC0
@@ -201,8 +220,15 @@ class FreeDVTransport:
         self._arq_pending  = None       # bytes waiting for ACK
         self._arq_seq_sent = 0
         self._arq_event    = threading.Event()
+        self._reader_done  = threading.Event()  # set when reader thread exits
         self._arq_acked    = False
         self._arq_nak      = False
+
+        # Keepalive / inactivity watchdog
+        self.inactivity_timeout  = 120   # seconds silence → disconnect
+        self.keepalive_interval  = 60    # seconds between outgoing pings
+        self._last_rx_time       = 0.0
+        self._last_tx_time       = 0.0
 
         # Callbacks
         self.on_state_change      = None
@@ -223,6 +249,7 @@ class FreeDVTransport:
             sock.settimeout(None)
             self._sock    = sock
             self.running  = True
+            self._reader_done.clear()   # reset before starting reader
             threading.Thread(target=self._reader, daemon=True,
                              name="freedv-rx").start()
             log.info("FreeDV: KISS connection established")
@@ -280,17 +307,18 @@ class FreeDVTransport:
             body = bytes([seq]) + data
             remote = self.remote_call or ""
 
+            timeout = _arq_timeout(len(data))
             for attempt in range(1, ARQ_MAX_RETRIES + 1):
                 self._arq_event.clear()
                 self._arq_acked  = False
                 self._arq_nak    = False
                 self._arq_seq_sent = seq
 
-                log.info("FreeDV: DATA seq=%d attempt=%d/%d (%d bytes)",
-                         seq, attempt, ARQ_MAX_RETRIES, len(data))
+                log.info("FreeDV: DATA seq=%d attempt=%d/%d (%d bytes, %.1fs timeout)",
+                         seq, attempt, ARQ_MAX_RETRIES, len(data), timeout)
                 self._send_packet(PKT_DATA, remote, body)
 
-                got = self._arq_event.wait(timeout=ARQ_TIMEOUT)
+                got = self._arq_event.wait(timeout=timeout)
                 if got and self._arq_acked:
                     log.info("FreeDV: DATA seq=%d ACKed", seq)
                     return True
@@ -322,12 +350,18 @@ class FreeDVTransport:
         """Shut down the transport."""
         self.running = False
         with self._lock:
-            if self._sock:
-                try:
-                    self._sock.close()
-                except Exception:
-                    pass
-                self._sock = None
+            sock = self._sock
+            self._sock = None
+        if sock:
+            try:
+                # shutdown() unblocks any pending recv() immediately
+                sock.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                pass
+            try:
+                sock.close()
+            except Exception:
+                pass
         self._go_disconnected()
 
     # ── Internal ────────────────────────────────────────────────────
@@ -339,16 +373,24 @@ class FreeDVTransport:
 
         while time.time() < deadline:
             attempt += 1
+            # Check state before sending — may have been answered already
+            with self._lock:
+                st = self.state
+            if st == FreeDVTransport.STATE_CONNECTED:
+                return   # Already connected (fast ACK)
+            if st == FreeDVTransport.STATE_DISCONNECTED:
+                return   # REJ received before we even retried
+
             log.info("FreeDV: CONN_REQ → %s (attempt %d)", target_call, attempt)
             self._send_packet(PKT_CONN_REQ, target_call, b"")
 
-            # Poll for state change with 5s between retries
+            # Wait up to 10s for a response before retrying
             waited = 0
             while waited < 10 and time.time() < deadline:
                 with self._lock:
                     st = self.state
                 if st == FreeDVTransport.STATE_CONNECTED:
-                    return   # ACK received by _handle_packet
+                    return   # ACK received
                 if st == FreeDVTransport.STATE_DISCONNECTED:
                     return   # REJ received
                 time.sleep(0.5)
@@ -366,6 +408,7 @@ class FreeDVTransport:
                 sock = self._sock
             if sock:
                 sock.sendall(frame)
+                self._last_tx_time = time.time()
         except Exception as e:
             log.error("FreeDV: send error: %s", e)
 
@@ -388,6 +431,7 @@ class FreeDVTransport:
             except Exception as e:
                 log.error("FreeDV: reader error: %s", e, exc_info=True)
         log.info("FreeDV: reader exited")
+        self._reader_done.set()   # signal that reader has fully exited
         if self.running:
             self._go_disconnected()
 
@@ -418,15 +462,28 @@ class FreeDVTransport:
             return
 
         log.info("FreeDV: pkt type=0x%02x from=%s", pkt_type, src)
+        self._last_rx_time = time.time()   # track for inactivity watchdog
 
         if pkt_type == PKT_CONN_REQ:
             self._handle_conn_req(src)
 
         elif pkt_type == PKT_CONN_ACK:
+            _start_watchdog = False
             with self._lock:
-                if self.state == FreeDVTransport.STATE_CONNECTING:
+                current = self.state
+                if current == FreeDVTransport.STATE_CONNECTING:
                     self.remote_call = src
+                    self._last_rx_seq = {}
+                    self._last_rx_time = time.time()
+                    self._last_tx_time = time.time()
+                    _start_watchdog = True
+                elif current == FreeDVTransport.STATE_CONNECTED:
+                    log.debug("FreeDV: duplicate CONN_ACK from %s — ignored", src)
+                    return
             self._set_state(FreeDVTransport.STATE_CONNECTED)
+            if _start_watchdog:
+                threading.Thread(target=self._watchdog, daemon=True,
+                                 name="freedv-watchdog").start()
 
         elif pkt_type == PKT_CONN_REJ:
             log.warning("FreeDV: CONN_REJ from %s", src)
@@ -438,9 +495,11 @@ class FreeDVTransport:
         elif pkt_type == PKT_DATA_ACK:
             if body:
                 seq = body[0]
-                if seq == self._arq_seq_sent:
+                if seq == self._arq_seq_sent and not self._arq_acked:
                     self._arq_acked = True
                     self._arq_event.set()
+                else:
+                    log.debug("FreeDV: duplicate DATA_ACK seq=%d — ignored", seq)
 
         elif pkt_type == PKT_DATA_NAK:
             if body:
@@ -448,6 +507,10 @@ class FreeDVTransport:
                 if seq == self._arq_seq_sent:
                     self._arq_nak = True
                     self._arq_event.set()
+
+        elif pkt_type == PKT_KEEPALIVE:
+            log.debug("FreeDV: KEEPALIVE from %s", src)
+            # _last_rx_time already updated above — no response needed
 
         elif pkt_type == PKT_DISC:
             log.info("FreeDV: DISC from %s", src)
@@ -458,21 +521,86 @@ class FreeDVTransport:
             log.info("FreeDV: DISC_ACK from %s", src)
             self._go_disconnected()
 
+    def _watchdog(self):
+        """
+        Watchdog thread: sends KEEPALIVE pings and disconnects on inactivity.
+        Started when a session becomes CONNECTED. Exits when disconnected.
+        """
+        log.info("FreeDV: watchdog started (keepalive=%ds, inactivity=%ds)",
+                 self.keepalive_interval, self.inactivity_timeout)
+        while True:
+            time.sleep(5)
+            with self._lock:
+                st = self.state
+            if st != FreeDVTransport.STATE_CONNECTED:
+                log.info("FreeDV: watchdog exiting (state=%d)", st)
+                return
+
+            now = time.time()
+            with self._lock:
+                remote = self.remote_call
+
+            # Send keepalive if no outgoing traffic recently
+            if (self.keepalive_interval > 0 and remote and
+                    now - self._last_tx_time > self.keepalive_interval):
+                log.debug("FreeDV: sending KEEPALIVE to %s", remote)
+                self._send_packet(PKT_KEEPALIVE, remote, b"")
+
+            # Disconnect on inactivity
+            if (self.inactivity_timeout > 0 and
+                    self._last_rx_time > 0 and
+                    now - self._last_rx_time > self.inactivity_timeout):
+                log.warning(
+                    "FreeDV: inactivity timeout (%.0fs) — disconnecting",
+                    now - self._last_rx_time
+                )
+                if remote:
+                    try:
+                        self._send_packet(PKT_DISC, remote, b"")
+                    except Exception:
+                        pass
+                self._go_disconnected()
+                return
+
     def _handle_conn_req(self, src: str):
         """Handle incoming connection request."""
         with self._lock:
-            busy = (self.state != FreeDVTransport.STATE_DISCONNECTED)
+            state       = self.state
+            remote_call = self.remote_call
 
-        if busy:
-            log.info("FreeDV: CONN_REQ from %s — rejecting (busy)", src)
+        if state == FreeDVTransport.STATE_CONNECTING:
+            # We are mid-outgoing-connect — reject incoming
+            log.info("FreeDV: CONN_REQ from %s — rejecting (connecting)", src)
             self._send_packet(PKT_CONN_REJ, src, b"")
             return
 
+        if state == FreeDVTransport.STATE_CONNECTED:
+            if remote_call and remote_call.upper() == src.upper():
+                # Same station is retrying — our CONN_ACK was lost over the air.
+                # Resend the ACK so the spoke can proceed.
+                log.info("FreeDV: CONN_REQ retry from %s — resending CONN_ACK",
+                         src)
+                self._send_packet(PKT_CONN_ACK, src, b"")
+                return
+            else:
+                # Different station or previous link dropped without DISC.
+                # Accept the new connection.
+                log.info("FreeDV: CONN_REQ from %s — previous link dropped, "
+                         "accepting (was connected to %s)", src, remote_call)
+                with self._lock:
+                    self.remote_call = None
+                    self.state = FreeDVTransport.STATE_DISCONNECTED
+
         log.info("FreeDV: CONN_REQ from %s — accepting", src)
         self._send_packet(PKT_CONN_ACK, src, b"")
+        self._last_rx_time = time.time()
+        self._last_tx_time = time.time()
         with self._lock:
             self.remote_call = src
+            self._last_rx_seq = {}   # reset seq tracking for new session
         self._set_state(FreeDVTransport.STATE_CONNECTED)
+        threading.Thread(target=self._watchdog, daemon=True,
+                         name="freedv-watchdog").start()
 
     def _handle_data(self, src: str, body: bytes):
         """Receive a DATA packet, send ACK, deliver payload."""
@@ -481,8 +609,20 @@ class FreeDVTransport:
         seq     = body[0]
         payload = body[1:]
 
-        # Send ACK
+        # Always ACK — the sender needs this even if we already processed
         self._send_packet(PKT_DATA_ACK, src, bytes([seq]))
+
+        # Deduplicate: if we already delivered this seq from this src,
+        # don't deliver the payload again (duplicate from stale socket).
+        last_seq = getattr(self, "_last_rx_seq", {})
+        key = src.upper()
+        if last_seq.get(key) == seq:
+            log.debug("FreeDV: duplicate DATA seq=%d from %s — ACKed, not redelivered",
+                      seq, src)
+            return
+        last_seq[key] = seq
+        self._last_rx_seq = last_seq
+
         log.info("FreeDV: DATA seq=%d from %s (%d bytes) — ACKed",
                  seq, src, len(payload))
 

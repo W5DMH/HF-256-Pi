@@ -22,7 +22,7 @@
     "id": "xiegu-x6100",
     "manufacturer": "Xiegu",
     "model": "X6100",
-    "hamlib_id": 3085,
+    "hamlib_id": 3087,
     "baud_rate": 19200,
     "ptt_method": "CAT",
     "audio_interface": "builtin",
