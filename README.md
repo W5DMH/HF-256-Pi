@@ -6,6 +6,8 @@ HF-256 is a self-contained communication system that lets amateur radio operator
 
 ---
 
+![HF-256 Console](images/console-screenshot.png)
+
 ## What HF-256 Does
 
 HF-256 creates a private, encrypted radio network between a **hub station** and one or more **spoke stations**. Every message, file, and chat is protected with AES-256-GCM encryption using a shared network key that only your group holds.
@@ -21,8 +23,7 @@ HF-256 creates a private, encrypted radio network between a **hub station** and 
 | Transport | Use case |
 |-----------|----------|
 | FreeDV HF | HF radio — fully open-source modem, no licence fees |
-| ARDOP HF | HF radio — alternative open-source modem |
-| ARDOP FM | VHF/UHF FM radio — short range, fast |
+| ARDOP FM  | VHF/UHF FM radio — short range, fast |
 | TCP | Internet or LAN — for testing and fixed infrastructure |
 
 ---
@@ -40,6 +41,8 @@ Other radios with a USB or serial PTT interface can be added through the setup w
 ---
 
 ## The PiTFT Display
+
+![PiTFT Display](images/tftdisplay.jpg)
 
 The HF-256 Pi appliance uses an **Adafruit Mini PiTFT 1.3" 240×240 colour display** mounted directly on the Pi's GPIO header. It provides at-a-glance status without needing a browser and is the primary way to operate the two physical controls on the unit.
 
@@ -276,20 +279,6 @@ The hub must have port 14256 open and reachable. For a hub behind a home router,
 
 ---
 
-## ARDOP HF — Alternative HF Modem
-
-ARDOP (Amateur Radio Digital Open Protocol) is an alternative HF data modem supported by HF-256. It covers the same use cases as FreeDV — point-to-point HF connections for chat, store-and-forward messaging, and file transfer — and is included for operators who already have ARDOP infrastructure or who want a second HF option.
-
-**FreeDV vs ARDOP HF — choosing between them:**
-
-FreeDV is the recommended HF transport for new deployments. It is fully open-source at every layer including the DSP codec, has no external dependencies beyond `freedvtnc2`, and its DATAC modes are purpose-designed for data. ARDOP is a mature and well-proven protocol with a large existing user base and strong interoperability with other ARDOP software.
-
-Both operate over the same HF transceiver hardware. If your group already uses ARDOP for other applications, selecting ARDOP HF in HF-256 lets you share frequency plans and operating schedules with that existing network.
-
-**Selecting ARDOP HF:** Click **ARDOP HF** in the console sidebar. The modem starts automatically. Connect and operate identically to FreeDV mode — the transport layer is transparent to the user.
-
----
-
 ## ARDOP FM — Local VHF/UHF and FM Band Communications
 
 ARDOP FM uses the same ARDOP protocol but is optimised for **FM rather than SSB**, making it suitable for VHF, UHF, and any FM-capable band. This opens HF-256 to a much wider range of local and regional communication scenarios that do not require HF propagation.
@@ -441,6 +430,30 @@ The network key is only used when encryption is enabled. Plaintext mode stations
 └── hf256/               ← Core Python package
 ```
 
+
+---
+
+## SSH Access
+
+Each Pi is accessible via SSH for diagnostics and administration.
+
+```
+Username: pi
+Password: 12345678
+```
+
+Connect from any device on the same network:
+
+```bash
+ssh pi@hf256.local
+# or by IP address
+ssh pi@192.168.4.1      # when Pi is in AP mode
+ssh pi@<assigned-ip>    # when Pi is in client WiFi mode
+```
+
+The IP address is shown on the PiTFT display. If you cannot connect via `hf256.local`, use the IP address directly.
+
+> **Security note:** Change the default password after initial setup using `passwd` at the SSH prompt. This is especially important for hub stations accessible from a wider network.
 
 ---
 
