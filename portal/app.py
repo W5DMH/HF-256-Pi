@@ -1426,13 +1426,24 @@ class ModemManager:
     # Users may have customised their CI-V address — these are factory defaults.
     _CIV_PTT = {
         # radio_id : (key_hex, unkey_hex, baud)
-        # Both hyphenated and underscored forms — config.env may use either
+        # Both hyphenated and underscored forms — config.env may use either.
+        # CI-V PTT command: FE FE <addr> E0 1C 00 01 FD (TX on)
+        #                   FE FE <addr> E0 1C 00 00 FD (TX off)
+        # Xiegu X6100 — CI-V addr 0xA4
         "xiegu_x6100":  ("FEFEA4E01C0001FD", "FEFEA4E01C0000FD", 19200),
         "xiegu-x6100":  ("FEFEA4E01C0001FD", "FEFEA4E01C0000FD", 19200),
+        # Xiegu G90 — CI-V addr 0x6E
         "xiegu_g90":    ("FEFE6EE01C0001FD", "FEFE6EE01C0000FD", 19200),
         "xiegu-g90":    ("FEFE6EE01C0001FD", "FEFE6EE01C0000FD", 19200),
+        # Icom IC-7300 — CI-V addr 0x94
         "icom_ic7300":  ("FEFE94E01C0001FD", "FEFE94E01C0000FD", 19200),
         "icom-ic7300":  ("FEFE94E01C0001FD", "FEFE94E01C0000FD", 19200),
+        # Icom IC-705 — CI-V addr 0x88 (factory default)
+        "icom_ic705":   ("FEFE88E01C0001FD", "FEFE88E01C0000FD", 19200),
+        "icom-ic705":   ("FEFE88E01C0001FD", "FEFE88E01C0000FD", 19200),
+        # Icom IC-9700 — CI-V addr 0xA2 (factory default)
+        "icom_ic9700":  ("FEFEA2E01C0001FD", "FEFEA2E01C0000FD", 19200),
+        "icom-ic9700":  ("FEFEA2E01C0001FD", "FEFEA2E01C0000FD", 19200),
     }
 
     def _start_ardop_locked(self, transport: str,

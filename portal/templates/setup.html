@@ -153,7 +153,7 @@
         {% for radio in radios %}
         <div class="radio-card" data-id="{{ radio.id }}"
              onclick="selectRadio('{{ radio.id }}', this)">
-          <div class="name">{{ radio.name }}</div>
+          <div class="name">{{ radio.model }}</div>
           <div class="desc">{{ radio.manufacturer }}</div>
           <div class="desc" style="margin-top:4px;color:#8b949e">
             {{ radio.ptt_method }} PTT &bull;
