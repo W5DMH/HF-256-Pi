@@ -288,7 +288,7 @@
   <a class="nav-btn" href="/files">Hub Files</a>
   <a class="nav-btn" href="/help">Help</a>
   <div class="topbar-spacer"></div>
-  <span style="font-size:11px;color:#888;margin-right:10px;letter-spacing:0.03em;">Version Alpha 0.0.2</span>
+  <span style="font-size:11px;color:#888;margin-right:10px;letter-spacing:0.03em;">Version Alpha 0.0.3</span>
   <span id="ws-badge" style="font-size:11px;color:var(--red)">
     ⬤ Not connected
   </span>
@@ -351,6 +351,8 @@
       <div class="h-sect">Hub operator commands:</div>
       <div><span class="h-cmd">/clear</span>
            &nbsp;<span class="h-desc">Clear the console window</span></div>
+      <div><span class="h-cmd">/passwd &lt;current&gt; &lt;new&gt;</span>
+           &nbsp;<span class="h-desc">Change your password (hub: local, spoke: transmits)</span></div>
       <div><span class="h-cmd">/adduser &lt;CALL&gt; &lt;pw&gt;</span> <span style="color:#888;font-size:10px">(hub)</span>
            &nbsp;<span class="h-desc">Add user to hub</span></div>
       <div><span class="h-cmd">/listusers</span> <span style="color:#888;font-size:10px">(hub)</span>
@@ -428,6 +430,7 @@
       <span class="qcmd" onclick="fillInput('/announce ')">/announce</span>
       <span class="qcmd" onclick="fillInput('/download ')">/download</span>
       <span class="qcmd" onclick="fillInput('/whoami')">/whoami</span>
+      <span class="qcmd" onclick="fillInput('/passwd ')">/passwd</span>
       <span class="qcmd" onclick="fillInput('/disconnect')">/disconnect</span>
       <span class="qcmd" onclick="toggleHelp()">/help</span>
     </div>
@@ -865,7 +868,7 @@ function handleCommand(raw) {
 
   if (command === "/auth") {
     if (!args) { addSys("Usage: /auth <password>"); return; }
-    if (ST.connState !== 2) {
+    if (ST.role !== "hub" && ST.connState !== 2) {
       addSys("✗ Not connected — use /connect first"); return;
     }
     wsSend({type:"auth", password:args});
@@ -881,9 +884,16 @@ function handleCommand(raw) {
     if (!ST.authenticated && ST.role !== "hub") {
       addSys("✗ Must authenticate first — use /auth <password>"); return;
     }
+    if (ST.role !== "hub" && ST.connState !== 2) {
+      addSys("✗ Not connected — use /connect first"); return;
+    }
     const sendTo = sp[0].toUpperCase();
     wsSend({type:"send", to: sendTo, text: sp.slice(1).join(" ")});
-    addSys("Transmitting to hub — waiting for confirmation...");
+    if (ST.role === "hub") {
+      addSys("Storing message locally...");
+    } else {
+      addSys("Transmitting to hub — waiting for confirmation...");
+    }
     return;
   }
 
@@ -891,8 +901,11 @@ function handleCommand(raw) {
     if (!ST.authenticated && ST.role !== "hub") {
       addSys("✗ Must authenticate first"); return;
     }
+    if (ST.role !== "hub" && ST.connState !== 2) {
+      addSys("✗ Not connected — use /connect first"); return;
+    }
     wsSend({type:"retrieve"});
-    addSys("Requesting stored messages...");
+    addSys(ST.role === "hub" ? "Reading local messages..." : "Requesting stored messages...");
     return;
   }
 
@@ -926,8 +939,11 @@ function handleCommand(raw) {
     if (!ST.authenticated && ST.role !== "hub") {
       addSys("✗ Must authenticate first"); return;
     }
+    if (ST.role !== "hub" && ST.connState !== 2) {
+      addSys("✗ Not connected — use /connect first"); return;
+    }
     wsSend({type:"download", filename:args});
-    addSys("Requesting download: " + args);
+    addSys(ST.role === "hub" ? "Checking file: " + args : "Requesting download: " + args);
     return;
   }
 
@@ -949,6 +965,17 @@ function handleCommand(raw) {
     } else {
       addSys("Usage: /encrypt on|off");
     }
+    return;
+  }
+
+  if (command === "/passwd") {
+    if (!args) { addSys("Usage: /passwd <current_password> <new_password>"); return; }
+    const pp = args.split(/\s+/);
+    if (pp.length < 2) { addSys("Usage: /passwd <current_password> <new_password>"); return; }
+    if (ST.role !== "hub" && ST.connState !== 2) {
+      addSys("✗ Not connected — use /connect first"); return;
+    }
+    wsSend({type:"passwd", current: pp[0], new: pp.slice(1).join(" ")});
     return;
   }
 

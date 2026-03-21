@@ -1204,6 +1204,8 @@ _HUB_TYPE_COMPLETE = 0x07
 _HUB_TYPE_ERROR    = 0x08
 _HUB_TYPE_STORE_ACK    = 0x14   # Hub → spoke: message stored confirmation
 _HUB_TYPE_RETRIEVE_RSP = 0x15   # Hub → spoke: retrieve completion notice
+_HUB_TYPE_PASSWD_REQ   = 0x16   # spoke→hub: change password request
+_HUB_TYPE_PASSWD_RSP   = 0x17   # hub→spoke: password change result
 
 
 def _chat_payload(sender: str, text: str) -> bytes:
@@ -1661,6 +1663,7 @@ class ConsoleSession:
         self.enc_enabled    = self.settings.get("encryption_enabled", True)
         self.transport      = None
         self.transport_mode = "tcp"
+        self.authenticated  = False              # True after /auth succeeds
         self._lock          = threading.Lock()   # protects self.transport
         self._send_q        = queue.Queue()      # outbound messages for sender thread
         _active_sessions.add(self)               # register for hub TCP dispatch
@@ -2294,16 +2297,28 @@ class ConsoleSession:
             except Exception as e:
                 app.logger.info("Console RX chat parse error: %s", e)
 
+        elif msg_type == _HUB_TYPE_PASSWD_RSP:
+            # Hub responded to our password change request
+            try:
+                rsp = json.loads(payload.decode())
+                ok  = rsp.get("ok", False)
+                msg_text = rsp.get("msg", "")
+                self.sys_msg(("✓ " if ok else "✗ ") + msg_text)
+            except Exception as e:
+                app.logger.error("PASSWD_RSP parse error: %s", e)
+
         elif msg_type == _HUB_TYPE_AUTH_RSP:
             # JSON: {"success": bool, "message": str}
             try:
                 import json as _json
                 obj = _json.loads(payload.decode())
                 if obj.get("success"):
+                    self.authenticated = True   # set server-side flag
                     self.send({"type": "auth_ok"})
                     if obj.get("message"):
                         self.sys_msg(obj["message"])
                 else:
+                    self.authenticated = False
                     self.send({"type": "auth_fail",
                                "reason": obj.get("message", "rejected")})
             except Exception as e:
@@ -2484,6 +2499,42 @@ class ConsoleSession:
             except Exception as e:
                 app.logger.error("Hub: RETRIEVE error: %s", e)
 
+        elif msg_type == _HUB_TYPE_PASSWD_REQ:
+            # Spoke requesting password change
+            settings = load_settings()
+            if settings.get("role") != "hub":
+                return
+            try:
+                req      = json.loads(payload.decode())
+                call     = req.get("callsign", "").upper()
+                curr_pw  = req.get("current_pw", "")
+                new_pw   = req.get("new_pw", "")
+                import hashlib as _hl, json as _jl
+                pw_file  = Path("/home/pi/.hf256/passwords.json")
+                db       = _jl.loads(pw_file.read_text()) if pw_file.exists() else {}
+                stored   = db.get(call)
+                if not stored:
+                    result, ok = f"No account for {call}", False
+                elif _hl.sha256(curr_pw.encode()).hexdigest() != stored:
+                    result, ok = "Current password incorrect", False
+                elif len(new_pw) < 4:
+                    result, ok = "New password too short (min 4 chars)", False
+                else:
+                    db[call] = _hl.sha256(new_pw.encode()).hexdigest()
+                    pw_file.write_text(_jl.dumps(db, indent=2))
+                    pw_file.chmod(0o600)
+                    result, ok = "Password changed successfully", True
+                rsp_payload = json.dumps({"ok": ok, "msg": result}).encode()
+                wire = _hub_pack(_HUB_TYPE_PASSWD_RSP, rsp_payload,
+                                 encrypt=self.enc_enabled)
+                with self._lock:
+                    t = self.transport
+                if t:
+                    t.send_data(wire)
+                app.logger.info("Hub PASSWD_REQ %s: %s", call, result)
+            except Exception as e:
+                app.logger.error("PASSWD_REQ error: %s", e)
+
         elif msg_type == _HUB_TYPE_STORE:
             # Spoke is sending a message to store for another callsign.
             # Payload format: [recip_len:2][recip][inner_wire]
@@ -2518,6 +2569,25 @@ class ConsoleSession:
                                                                    errors="replace")
 
                 # Load user database for validation
+                # Check if recipient is hub callsign without a mailbox (headless)
+                hub_call = settings.get("callsign", "N0CALL").upper()
+                if to_call == hub_call:
+                    import json as _jl
+                    _pw = Path("/home/pi/.hf256/passwords.json")
+                    _db = _jl.loads(_pw.read_text()) if _pw.exists() else {}
+                    if hub_call not in _db:
+                        rej = json.dumps({
+                            "ok":  False,
+                            "msg": (f"Hub is operating headless — "
+                                    f"no mailbox for {hub_call}")
+                        }).encode()
+                        rej_wire = _hub_pack(_HUB_TYPE_STORE_ACK, rej,
+                                             encrypt=self.enc_enabled)
+                        with self._lock:
+                            t = self.transport
+                        if t:
+                            t.send_data(rej_wire)
+                        return
                 pw_file = Path("/home/pi/.hf256/passwords.json")
                 known_calls = set()
                 if pw_file.exists():
@@ -2732,6 +2802,95 @@ class ConsoleSession:
 
     # ── Send ──────────────────────────────────────────────────────
 
+    # ── Hub-local operation helpers ──────────────────────────────────
+
+    def _hub_local_auth(self, password: str) -> bool:
+        """Check password against passwords.json for hub callsign."""
+        import hashlib as _hl, json as _jl
+        pw_file = Path("/home/pi/.hf256/passwords.json")
+        try:
+            db = _jl.loads(pw_file.read_text()) if pw_file.exists() else {}
+            stored = db.get(self.mycall.upper())
+            if not stored:
+                return False
+            return _hl.sha256(password.encode()).hexdigest() == stored
+        except Exception:
+            return False
+
+    def _hub_local_store(self, to_call: str, from_call: str,
+                         text: str) -> tuple:
+        """
+        Store a chat message locally on the hub.
+        Returns (ok: bool, error_msg: str).
+        Rejects if recipient not in passwords.json.
+        If recipient is hub callsign and no hub user exists, returns
+        a headless rejection message.
+        """
+        import json as _jl
+        pw_file  = Path("/home/pi/.hf256/passwords.json")
+        msg_base = Path("/home/pi/.hf256/hub_messages")
+        try:
+            db       = _jl.loads(pw_file.read_text()) if pw_file.exists() else {}
+            hub_call = load_settings().get("callsign", "N0CALL").upper()
+            if to_call == hub_call and hub_call not in db:
+                return (False,
+                        f"Hub is operating headless — no mailbox for {hub_call}. "
+                        f"Hub operator: run /adduser {hub_call} <password>.")
+            if to_call not in db:
+                return (False, f"Unknown recipient: {to_call}")
+            msg_dir = msg_base / to_call
+            msg_dir.mkdir(parents=True, exist_ok=True)
+            ts    = int(time.time())           # seconds, matches STORE handler
+            ts_ms = int(time.time() * 1000)   # milliseconds for filename uniqueness
+            body  = _jl.dumps({"sender": from_call, "text": text,
+                                "timestamp": ts})
+            (msg_dir / str(ts_ms)).write_text(body)
+            return (True, "")
+        except Exception as e:
+            return (False, str(e))
+
+    def _hub_local_retrieve(self) -> list:
+        """Read and delete stored messages for hub callsign. Returns list of (from, text, ts)."""
+        import json as _jl
+        msg_dir  = Path("/home/pi/.hf256/hub_messages") / self.mycall.upper()
+        messages = []
+        if not msg_dir.exists():
+            return messages
+        for f in sorted(msg_dir.iterdir()):
+            if not f.is_file():
+                continue
+            try:
+                body = _jl.loads(f.read_text())
+                # Field names match STORE handler: "sender", "text", "timestamp"
+                messages.append((body.get("sender", body.get("from", "?")),
+                                  body.get("text", ""),
+                                  body.get("timestamp", body.get("ts", 0))))
+                f.unlink()
+            except Exception:
+                pass
+        return messages
+
+    def _hub_local_passwd(self, current_pw: str, new_pw: str) -> tuple:
+        """Change password for hub callsign. Returns (ok, message)."""
+        import hashlib as _hl, json as _jl
+        pw_file = Path("/home/pi/.hf256/passwords.json")
+        try:
+            db     = _jl.loads(pw_file.read_text()) if pw_file.exists() else {}
+            call   = self.mycall.upper()
+            stored = db.get(call)
+            if not stored:
+                return (False, f"No account for {call} — use /adduser first")
+            if _hl.sha256(current_pw.encode()).hexdigest() != stored:
+                return (False, "Current password incorrect")
+            if len(new_pw) < 4:
+                return (False, "New password must be at least 4 characters")
+            db[call] = _hl.sha256(new_pw.encode()).hexdigest()
+            pw_file.write_text(_jl.dumps(db, indent=2))
+            pw_file.chmod(0o600)
+            return (True, "Password changed successfully")
+        except Exception as e:
+            return (False, str(e))
+
     def _send_hub(self, msg_type: int, payload: bytes) -> bool:
         """
         Pack in hub wire format and call transport.send_data(wire).
@@ -2746,7 +2905,7 @@ class ConsoleSession:
             transport = self.transport
 
         if transport is None or transport.state != 2:
-            self.sys_msg("✗ Not connected to hub")
+            self.sys_msg("✗ Not connected — use /connect <IP> first")
             return False
 
         wire = _hub_pack(msg_type, payload, encrypt=self.enc_enabled)
@@ -2872,42 +3031,109 @@ class ConsoleSession:
 
         elif mtype == "auth":
             password = msg.get("password", "")
-            payload = json.dumps(
-                {"callsign": self.mycall, "password": password}
-            ).encode()
-            self._send_hub(_HUB_TYPE_AUTH_REQ, payload)
+            if load_settings().get("role") == "hub":
+                if self._hub_local_auth(password):
+                    self.authenticated = True
+                    msg_dir = (Path("/home/pi/.hf256/hub_messages")
+                               / self.mycall.upper())
+                    pending = (sum(1 for f in msg_dir.iterdir() if f.is_file())
+                               if msg_dir.exists() else 0)
+                    # Notify browser so ST.authenticated is set client-side
+                    self.send({"type": "authenticated",
+                               "callsign": self.mycall,
+                               "pending": pending})
+                    self.sys_msg(f"✓ Authenticated as {self.mycall}")
+                    if pending:
+                        self.sys_msg(f"  {pending} message(s) waiting — use /retrieve")
+                else:
+                    self.sys_msg("✗ Authentication failed — wrong password")
+                    self.sys_msg("  (No account? Ask hub operator to /adduser)")
+            else:
+                payload = json.dumps(
+                    {"callsign": self.mycall, "password": password}
+                ).encode()
+                self._send_hub(_HUB_TYPE_AUTH_REQ, payload)
 
         elif mtype == "send":
             to   = msg.get("to", "").upper()
             text = msg.get("text", "")
             if to and text:
-                import struct as _struct
-                # Build payload
-                inner_wire = _hub_pack(_HUB_TYPE_CHAT,
-                                       _chat_payload(self.mycall, text),
-                                       encrypt=self.enc_enabled)
-                recip_bytes  = to.encode('utf-8')
-                store_payload = _struct.pack(">H", len(recip_bytes)) + recip_bytes + inner_wire
-                # Send in background — confirmation comes via STORE_ACK from hub
-                def _do_send(p=store_payload, dest=to):
-                    ok = self._send_hub(_HUB_TYPE_STORE, p)
-                    if not ok:
-                        self.sys_msg(f"✗ Transmission failed — hub did not ACK")
-                    # Actual storage confirmation comes via STORE_ACK handler below
-                threading.Thread(target=_do_send, daemon=True,
-                                 name="send-msg").start()
+                if load_settings().get("role") == "hub":
+                    if not self.authenticated:
+                        self.sys_msg("✗ Must authenticate first — use /auth <password>")
+                    else:
+                        ok, err = self._hub_local_store(to, self.mycall, text)
+                        if ok:
+                            self.sys_msg(f"✓ Message stored for {to}")
+                        else:
+                            self.sys_msg(f"✗ {err}")
+                else:
+                    import struct as _struct
+                    inner_wire    = _hub_pack(_HUB_TYPE_CHAT,
+                                             _chat_payload(self.mycall, text),
+                                             encrypt=self.enc_enabled)
+                    recip_bytes   = to.encode("utf-8")
+                    store_payload = _struct.pack(">H", len(recip_bytes)) + recip_bytes + inner_wire
+                    def _do_send(p=store_payload, dest=to):
+                        ok = self._send_hub(_HUB_TYPE_STORE, p)
+                        if not ok:
+                            self.sys_msg(f"✗ Transmission failed — hub did not ACK")
+                    threading.Thread(target=_do_send, daemon=True,
+                                     name="send-msg").start()
 
         elif mtype == "retrieve":
-            self._send_hub(_HUB_TYPE_RETRIEVE, b"{}")
+            if load_settings().get("role") == "hub":
+                if not self.authenticated:
+                    self.sys_msg("✗ Must authenticate first — use /auth <password>")
+                else:
+                    messages = self._hub_local_retrieve()
+                    if not messages:
+                        self.sys_msg("No messages waiting")
+                    else:
+                        import datetime as _dt
+                        self.sys_msg(f"─── {len(messages)} message(s) ───────────────")
+                        for frm, txt, ts in messages:
+                            dt = _dt.datetime.utcfromtimestamp(
+                                ts / 1000).strftime("%Y-%m-%d %H:%MZ")
+                            self.sys_msg(f"[{dt}] From {frm}: {txt}")
+                        self.sys_msg("─────────────────────────────────────────")
+            else:
+                self._send_hub(_HUB_TYPE_RETRIEVE, b"{}")
 
         elif mtype == "files":
-            self._send_hub(_HUB_TYPE_FL_REQ, b"{}")
+            if load_settings().get("role") == "hub":
+                files_dir = Path("/home/pi/.hf256/hub_files")
+                files = [f for f in sorted(files_dir.iterdir())
+                         if f.is_file() and f.suffix != ".desc"]                         if files_dir.exists() else []
+                if not files:
+                    self.sys_msg("No files available on hub")
+                else:
+                    self.sys_msg("─── Hub Files ────────────────────────────")
+                    for f in files:
+                        desc_f = files_dir / (f.name + ".desc")
+                        desc   = desc_f.read_text().strip() if desc_f.exists() else ""
+                        self.sys_msg(
+                            f"  {f.name}  ({f.stat().st_size:,} bytes)"
+                            + (f"  — {desc}" if desc else ""))
+                    self.sys_msg("  Use /download <filename> to save a file")
+                    self.sys_msg("─────────────────────────────────────────")
+            else:
+                self._send_hub(_HUB_TYPE_FL_REQ, b"{}")
 
         elif mtype == "download":
             filename = msg.get("filename", "")
             if filename:
-                payload = json.dumps({"filename": filename}).encode()
-                self._send_hub(_HUB_TYPE_DL_REQ, payload)
+                if load_settings().get("role") == "hub":
+                    safe = Path(filename).name
+                    f    = Path("/home/pi/.hf256/hub_files") / safe
+                    if not f.exists() or not f.is_file():
+                        self.sys_msg(f"✗ File not found: {safe}")
+                    else:
+                        self.sys_msg(f"✓ {safe} ({f.stat().st_size:,} bytes)")
+                        self.sys_msg("  Hub files are accessible via the Hub Files page")
+                else:
+                    payload = json.dumps({"filename": filename}).encode()
+                    self._send_hub(_HUB_TYPE_DL_REQ, payload)
 
         elif mtype == "cancel":
             self._dl_cancel = True
@@ -2981,6 +3207,25 @@ class ConsoleSession:
             self.sys_msg(f"  audio card : {config.get('AUDIO_CARD', '?')}")
             self.sys_msg(f"  serial port: {config.get('SERIAL_PORT', 'none')}")
             self.sys_msg(f"  FreeDV mode: {config.get('FREEDV_MODE', 'DATAC1')}")
+
+        elif mtype == "passwd":
+            current_pw = msg.get("current", "")
+            new_pw     = msg.get("new", "")
+            if not current_pw or not new_pw:
+                self.sys_msg("✗ Usage: /passwd <current_password> <new_password>")
+            elif load_settings().get("role") == "hub":
+                ok, result = self._hub_local_passwd(current_pw, new_pw)
+                self.sys_msg(("✓ " if ok else "✗ ") + result)
+            else:
+                if not self.authenticated:
+                    self.sys_msg("✗ Must authenticate first — use /auth <password>")
+                else:
+                    payload = json.dumps({
+                        "callsign":   self.mycall,
+                        "current_pw": current_pw,
+                        "new_pw":     new_pw
+                    }).encode()
+                    self._send_hub(_HUB_TYPE_PASSWD_REQ, payload)
 
         elif mtype == "bulletin":
             text = msg.get("text", "")
