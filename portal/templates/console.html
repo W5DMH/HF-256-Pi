@@ -288,7 +288,7 @@
   <a class="nav-btn" href="/files">Hub Files</a>
   <a class="nav-btn" href="/help">Help</a>
   <div class="topbar-spacer"></div>
-  <span style="font-size:11px;color:#888;margin-right:10px;letter-spacing:0.03em;">Version Alpha 0.0.4</span>
+  <span style="font-size:11px;color:#888;margin-right:10px;letter-spacing:0.03em;">Version Alpha 0.0.5</span>
   <span id="ws-badge" style="font-size:11px;color:var(--red)">
     ⬤ Not connected
   </span>
@@ -380,6 +380,11 @@
               onclick="selectTransport('tcp')">
         ◉ TCP / Internet
       </button>
+      <button class="t-btn" id="t-hybrid"
+              onclick="toggleHybrid()"
+              style="border-style:dashed">
+        ○ Hybrid Mode
+      </button>
       <button class="t-btn" id="t-freedv"
               onclick="selectTransport('freedv')">
         ○ FreeDV HF
@@ -459,6 +464,7 @@ const ST = {
   hubAddress:    "{{ settings.hub_address or '' }}",
   encEnabled:    {{ 'true' if settings.encryption_enabled else 'false' }},
   transport:     "tcp",
+  hybridMode:    false,   // true = TCP server runs alongside radio transport
   connState:     0,   // 0=off 1=connecting 2=connected
   remoteCall:    null,
   authenticated: {{ "true" if settings.role == "hub" else "false" }},
@@ -602,7 +608,12 @@ function selectTransport(t) {
     "freedv":   "FreeDV HF",
     "ardop-fm": "ARDOP FM"
   };
-  addSys("Transport: " + labels[t]);
+  // In hybrid mode, TCP server runs permanently — clicking TCP is a no-op
+  if (ST.hybridMode && t === "tcp") {
+    addSys("ℹ TCP is already running via Hybrid Mode");
+    return;
+  }
+  addSys("Transport: " + labels[t] + (ST.hybridMode ? " (+ TCP via Hybrid)" : ""));
   if (t !== "tcp") {
     addSys("Note: " + labels[t] +
            " transport — ensure modem service is running");
@@ -613,6 +624,31 @@ function selectTransport(t) {
 
   updateStatus();
   wsSend({type:"set_transport", transport: t});
+}
+
+// ================================================================
+// Hybrid Mode toggle
+// ================================================================
+function toggleHybrid() {
+  if (ST.role !== "hub") {
+    addSys("⚠ Hybrid mode is a Hub function — not available on spoke stations");
+    return;
+  }
+  ST.hybridMode = !ST.hybridMode;
+  const btn = document.getElementById("t-hybrid");
+  if (ST.hybridMode) {
+    btn.className  = "t-btn active";
+    btn.textContent = "◉ Hybrid Mode";
+    addSys("✓ Hybrid mode ON — TCP server will remain active alongside radio transport");
+    addSys("  Switch FreeDV or ARDOP FM freely — TCP stays running");
+    // Start the TCP server on the hub
+    wsSend({type:"set_hybrid", enabled: true});
+  } else {
+    btn.className  = "t-btn";
+    btn.textContent = "○ Hybrid Mode";
+    addSys("Hybrid mode OFF — transports are mutually exclusive");
+    wsSend({type:"set_hybrid", enabled: false});
+  }
 }
 
 // ================================================================

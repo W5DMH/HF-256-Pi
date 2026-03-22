@@ -1672,6 +1672,8 @@ class ConsoleSession:
         self.transport      = None
         self.transport_mode = "tcp"
         self.authenticated  = False              # True after /auth succeeds
+        self.hybrid_mode    = False              # True = TCP server runs alongside radio transport
+        self._tcp_server    = None               # Hybrid: persistent TCP transport
         self._lock          = threading.Lock()   # protects self.transport
         self._send_q        = queue.Queue()      # outbound messages for sender thread
         _active_sessions.add(self)               # register for hub TCP dispatch
@@ -1680,14 +1682,16 @@ class ConsoleSession:
 
     def _teardown_transport(self):
         """
-        Cleanly close self.transport regardless of type and null it out.
-        Waits briefly for reader threads to exit so the next transport
-        starts with clean state.
-        Called before switching modems to prevent stale transport objects
-        from blocking _start_ardop_listener / _start_freedv_listener.
+        Cleanly close self.transport (radio transport) and null it out.
+        Does NOT touch self._tcp_server — the hybrid TCP server runs
+        independently and must survive radio transport switches.
         """
         with self._lock:
             old_t = self.transport
+            # Safety: never tear down the hybrid TCP server via this path
+            if old_t is not None and old_t is self._tcp_server:
+                self.transport = None
+                return
             self.transport = None
             # Clear receive buffers
             self._freedv_rx_buf = b""
@@ -1754,15 +1758,19 @@ class ConsoleSession:
             # TCP: stop all modems, then start server listener if hub
             self.sys_msg("Stopping modems for TCP mode...")
             _modem_manager.stop_all()
+            # Tear down radio transport but preserve hybrid TCP server
+            self._teardown_transport()
             global _active_transport
             _active_transport = "tcp"
             settings = load_settings()
             if settings.get("role") == "hub":
-                # Hub starts a TCP server so spokes can connect to this IP
-                threading.Thread(
-                    target=self._start_tcp_listener,
-                    daemon=True, name="tcp-listen"
-                ).start()
+                if self.hybrid_mode and self._tcp_server is not None:
+                    self.sys_msg("✓ TCP/Internet — Hybrid TCP already running")
+                else:
+                    threading.Thread(
+                        target=self._start_tcp_listener,
+                        daemon=True, name="tcp-listen"
+                    ).start()
             else:
                 self.sys_msg(f"✓ {label} ready — use /connect <IP> [port]")
             return
@@ -2498,8 +2506,17 @@ class ConsoleSession:
 
                 n = len(messages)
                 def _send_retrieved(pkts=packets, cnt=n, rem=remote):
+                    # Brief delay before transmitting back — gives the ARQ
+                    # layer time to complete the ACK handshake for the
+                    # RETRIEVE request before the hub starts responding.
+                    # Without this, hub TX collides with spoke ARQ ACK on
+                    # half-duplex FreeDV/ARDOP links causing spurious disconnects.
+                    import time as _t; _t.sleep(1.5)
                     for pkt in pkts:
                         self._hub_send(pkt)
+                        # Small inter-packet gap for ARQ stability on multi-message retrieves
+                        if len(pkts) > 2:
+                            _t.sleep(0.5)
                     app.logger.info("Hub: delivered %d messages to %s", cnt, rem)
 
                 threading.Thread(target=_send_retrieved, daemon=True,
