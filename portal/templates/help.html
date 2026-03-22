@@ -285,6 +285,9 @@ All stations on your network must share the same AES-256 encryption key. Either 
 /adduser W2DEF anotherpassword
 </code></pre>
 <p>User credentials are stored locally on the hub Pi.</p>
+<h3 id="changing-a-password">Changing a password</h3>
+<pre><code>/passwd currentpassword newpassword</code></pre>
+<p>The hub operator can change their own password without a radio connection. Spoke stations can also use <code>/passwd</code> while connected to change their hub password remotely. Both hub and spoke must be authenticated first.</p>
 <h3 id="listing-users">Listing users</h3>
 <pre><code>/listusers
 </code></pre>
@@ -405,6 +408,10 @@ All stations on your network must share the same AES-256 encryption key. Either 
 <tr>
 <td><code>/auth &lt;password&gt;</code></td>
 <td>Authenticate with the hub</td>
+</tr>
+<tr>
+<td><code>/passwd &lt;current&gt; &lt;new&gt;</code></td>
+<td>Change your password (hub: local, spoke: transmits to hub)</td>
 </tr>
 <tr>
 <td><code>/encrypt on\|off</code></td>
