@@ -49,7 +49,7 @@
     "audio_interface": "builtin",
     "requires_external_audio": false,
     "description": "Icom IC-705 \u2014 portable SDR-based transceiver with built-in USB audio and CI-V CAT control. HF/VHF/UHF. Excellent for ARDOP FM on VHF/UHF.",
-    "civ_address": "0x88",
+    "civ_address": "0xA4",
     "audio_settings": {
       "recommended_alsa_rx": 50,
       "recommended_alsa_tx": 50,
@@ -118,5 +118,25 @@
     },
     "ptt_on_delay_ms": 300,
     "ptt_off_delay_ms": 200
+  },
+  {
+    "id": "icom-ic7100",
+    "manufacturer": "Icom",
+    "model": "IC-7100",
+    "hamlib_id": 3043,
+    "baud_rate": 19200,
+    "ptt_method": "CAT",
+    "audio_interface": "builtin",
+    "requires_external_audio": false,
+    "description": "Icom IC-7100 \u2014 HF/VHF/UHF with built-in USB audio and CI-V CAT control.",
+    "civ_address": "0x88",
+    "audio_settings": {
+      "recommended_alsa_rx": 50,
+      "recommended_alsa_tx": 50,
+      "alc_guidance": "Monitor ALC on radio display. Reduce TX until ALC reads minimal.",
+      "alc_target": "Minimal"
+    },
+    "ptt_on_delay_ms": 250,
+    "ptt_off_delay_ms": 150
   }
 ]

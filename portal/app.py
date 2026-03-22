@@ -1440,12 +1440,17 @@ class ModemManager:
         # Icom IC-7300 — CI-V addr 0x94
         "icom_ic7300":  ("FEFE94E01C0001FD", "FEFE94E01C0000FD", 19200),
         "icom-ic7300":  ("FEFE94E01C0001FD", "FEFE94E01C0000FD", 19200),
-        # Icom IC-705 — CI-V addr 0x88 (factory default)
-        "icom_ic705":   ("FEFE88E01C0001FD", "FEFE88E01C0000FD", 19200),
-        "icom-ic705":   ("FEFE88E01C0001FD", "FEFE88E01C0000FD", 19200),
+        # Icom IC-705 — CI-V addr 0xA4 (factory default per Icom manual)
+        # NOTE: 0xA4 is shared with Xiegu X6100 — Xiegu cloned this address.
+        # 0x88 is the IC-7100, NOT the IC-705.
+        "icom_ic705":   ("FEFEA4E01C0001FD", "FEFEA4E01C0000FD", 19200),
+        "icom-ic705":   ("FEFEA4E01C0001FD", "FEFEA4E01C0000FD", 19200),
         # Icom IC-9700 — CI-V addr 0xA2 (factory default)
         "icom_ic9700":  ("FEFEA2E01C0001FD", "FEFEA2E01C0000FD", 19200),
         "icom-ic9700":  ("FEFEA2E01C0001FD", "FEFEA2E01C0000FD", 19200),
+        # Icom IC-7100 — CI-V addr 0x88 (factory default)
+        "icom_ic7100":  ("FEFE88E01C0001FD", "FEFE88E01C0000FD", 19200),
+        "icom-ic7100":  ("FEFE88E01C0001FD", "FEFE88E01C0000FD", 19200),
     }
 
     def _start_ardop_locked(self, transport: str,
@@ -1505,6 +1510,9 @@ class ModemManager:
             (radio_id or "").lower())
         if civ and serial_port:
             # CI-V CAT PTT — radio handles TX keying via serial CI-V commands
+            # ardopc -c sets the CI-V serial port, -k/-u are the PTT hex strings.
+            # ardopc 1.0.4.1.3 does not support a -b baud flag — it uses the
+            # OS default baud for the port. CI-V radios auto-negotiate baud.
             key_str, unkey_str, baud = civ
             cmd += ["-c", serial_port,
                     "-k", key_str,
@@ -2577,9 +2585,10 @@ class ConsoleSession:
                     _db = _jl.loads(_pw.read_text()) if _pw.exists() else {}
                     if hub_call not in _db:
                         rej = json.dumps({
-                            "ok":  False,
-                            "msg": (f"Hub is operating headless — "
-                                    f"no mailbox for {hub_call}")
+                            "ok":      False,
+                            "message": (f"Hub is operating headless — "
+                                        f"no mailbox for {hub_call}. "
+                                        f"Hub operator: /adduser {hub_call} <password>")
                         }).encode()
                         rej_wire = _hub_pack(_HUB_TYPE_STORE_ACK, rej,
                                              encrypt=self.enc_enabled)

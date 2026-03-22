@@ -328,9 +328,11 @@ function detectHardware() {
       let msg = data.serial_ports.length + " port(s), " +
                 data.audio_devices.length + " audio card(s) found";
       if (data.digirig.found)
-        msg += " — DigiRig auto-detected";
+        msg += " — DigiRig Mobile auto-detected";
       else if (data.x6100.found)
-        msg += " — X6100 auto-detected";
+        msg += " — Xiegu X6100 auto-detected";
+      else if (data.serial_ports.some(p => p.port.includes("ttyACM")))
+        msg += " — CI-V radio detected on ttyACM — select your model above";
 
       hwDot("ok", msg);
       checkReady();
