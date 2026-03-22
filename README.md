@@ -86,6 +86,7 @@ A spoke is a field unit that calls into the hub. The spoke operator:
 - Connects to the hub using `/connect <CALLSIGN>`
 - Authenticates with `/auth <password>`
 - Can chat live with the hub operator, send and retrieve messages, and download files
+- Can change their hub password at any time using `/passwd <current> <new>`
 - Disconnects when done — the hub holds any messages for the next check-in
 
 ---
