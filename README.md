@@ -171,6 +171,12 @@ The Pi transmits a connection request over the air. On a clear channel this typi
 ```
 Your password is sent encrypted to the hub. On success: `✓ Authenticated — Welcome <CALLSIGN>`.
 
+### 3a. Change your password (optional)
+```
+/passwd yourpassword newpassword
+```
+Changes your password on the hub. You must be authenticated first. The change takes effect immediately — use the new password next time you `/auth`.
+
 ### 4. Retrieve waiting messages
 ```
 /retrieve
@@ -211,6 +217,12 @@ The hub console works the same way as a spoke console, with additional commands 
 /adduser W2DEF anotherpassword
 ```
 User credentials are stored locally on the hub Pi.
+
+### Changing a password
+```
+/passwd currentpassword newpassword
+```
+The hub operator can change their own password without needing a radio connection. Spoke stations can also use `/passwd` while connected to change their own hub password remotely. Both hub and spoke must be authenticated before using `/passwd`.
 
 ### Listing users
 ```
@@ -308,6 +320,7 @@ ARDOP FM uses the same ARDOP protocol but is optimised for **FM rather than SSB*
 | Command | Description |
 |---------|-------------|
 | `/auth <password>` | Authenticate with the hub |
+| `/passwd <current> <new>` | Change your password (hub: local, spoke: transmits to hub) |
 | `/encrypt on\|off` | Toggle AES-256-GCM encryption |
 | `/whoami` | Show callsign, transport, connection and auth status |
 
