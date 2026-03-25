@@ -255,10 +255,9 @@ The FreeDV mode is selected from the sidebar in the console. All stations in a Q
 | Mode | Bandwidth | Speed | Use when |
 |------|-----------|-------|----------|
 | DATAC1 | 1.25 kHz | ~980 bps | Standard — good balance of speed and robustness |
-| DATAC3 | 0.5 kHz | ~450 bps | Crowded bands, narrow filters, marginal conditions |
-| DATAC4 | 2.5 kHz | ~2200 bps | Excellent conditions, fast file transfers |
+| Announce | 1.25 kHz | ~980 bps | Broadcast message to all stations, fire and forget, no ack |
 
-**DATAC1 is recommended as the starting point.** If you are having trouble completing connections, try DATAC3. If conditions are excellent and you need faster file transfers, try DATAC4.
+**DATAC1 was found to be best suited for this application. 
 
 ---
 
