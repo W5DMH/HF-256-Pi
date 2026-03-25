@@ -25,6 +25,7 @@ HF-256 creates a private, encrypted radio network between a **hub station** and 
 | FreeDV HF | HF radio — fully open-source modem, no licence fees |
 | ARDOP FM  | VHF/UHF FM radio — short range, fast |
 | TCP | Internet or LAN — for testing and fixed infrastructure |
+| Hybrid Mode | Hub only — TCP server runs alongside FreeDV or ARDOP FM simultaneously |
 
 ---
 
@@ -32,11 +33,19 @@ HF-256 creates a private, encrypted radio network between a **hub station** and 
 
 Each HF-256 node is a **Raspberry Pi 4** running the HF-256 software. Any station on your network can be reached with a phone, tablet, or laptop browser — the Pi serves the interface on port 80.
 
-**Supported radio interfaces:**
-- **DigiRig Mobile** — USB audio + RTS PTT, plug-and-play with most HF transceivers
-- **Xiegu X6100** — direct USB audio + CAT PTT via CI-V
+**Supported radios:**
 
-Other radios with a USB or serial PTT interface can be added through the setup wizard.
+| Radio | Bands | Audio | PTT | Notes |
+|-------|-------|-------|-----|-------|
+| DigiRig Mobile | Any | External USB | RTS | Plug-and-play with most transceivers |
+| Xiegu X6100 | HF | Built-in USB | CI-V CAT | Portable SDR-based HF transceiver |
+| Xiegu G90 | HF | External USB | CI-V CAT | Requires DigiRig or similar audio interface |
+| Icom IC-705 | HF/VHF/UHF | Built-in USB | CI-V CAT | Portable — excellent for ARDOP FM on VHF/UHF |
+| Icom IC-7300 | HF/6m | Built-in USB | CI-V CAT | Popular SDR-based HF base station |
+| Icom IC-7100 | HF/VHF/UHF | Built-in USB | CI-V CAT | HF/VHF/UHF base station |
+| Icom IC-9700 | VHF/UHF/SHF | Built-in USB | CI-V CAT | Ideal for ARDOP FM on 2m, 70cm, 23cm |
+
+Radios with built-in USB audio connect directly to the Pi with a single USB cable. Radios without built-in audio require an external USB audio interface such as the DigiRig Mobile.
 
 ---
 
@@ -86,7 +95,6 @@ A spoke is a field unit that calls into the hub. The spoke operator:
 - Connects to the hub using `/connect <CALLSIGN>`
 - Authenticates with `/auth <password>`
 - Can chat live with the hub operator, send and retrieve messages, and download files
-- Can change their hub password at any time using `/passwd <current> <new>`
 - Disconnects when done — the hub holds any messages for the next check-in
 
 ---
@@ -172,12 +180,6 @@ The Pi transmits a connection request over the air. On a clear channel this typi
 ```
 Your password is sent encrypted to the hub. On success: `✓ Authenticated — Welcome <CALLSIGN>`.
 
-### 3a. Change your password (optional)
-```
-/passwd yourpassword newpassword
-```
-Changes your password on the hub. You must be authenticated first. The change takes effect immediately — use the new password next time you `/auth`.
-
 ### 4. Retrieve waiting messages
 ```
 /retrieve
@@ -218,12 +220,6 @@ The hub console works the same way as a spoke console, with additional commands 
 /adduser W2DEF anotherpassword
 ```
 User credentials are stored locally on the hub Pi.
-
-### Changing a password
-```
-/passwd currentpassword newpassword
-```
-The hub operator can change their own password without needing a radio connection. Spoke stations can also use `/passwd` while connected to change their own hub password remotely. Both hub and spoke must be authenticated before using `/passwd`.
 
 ### Listing users
 ```
@@ -309,6 +305,28 @@ ARDOP FM uses the same ARDOP protocol but is optimised for **FM rather than SSB*
 
 ---
 
+## Hybrid Mode — Simultaneous TCP and Radio
+
+Hybrid Mode is a **hub-only feature** that allows the hub station to accept TCP/internet connections and radio connections (FreeDV or ARDOP FM) simultaneously. A spoke station with internet access can connect via TCP and leave messages for a spoke that only has radio access — and vice versa. All messages go through the same store-and-forward system regardless of which transport they arrived on.
+
+**Enabling Hybrid Mode:**
+
+Click the **Hybrid Mode** button in the console sidebar Transport section. The button uses a dashed border to distinguish it from the mutually-exclusive transport buttons. When active it shows ◉ Hybrid Mode.
+
+Once enabled:
+- The TCP server on port 14256 stays running permanently
+- You can freely switch between FreeDV and ARDOP FM without losing TCP connectivity
+- Spoke stations on the internet can connect via TCP while radio spokes connect over the air
+- Clicking the TCP/Internet button while Hybrid Mode is on shows a note that TCP is already running
+
+**Disabling Hybrid Mode:** Click the Hybrid Mode button again to toggle it off. The TCP server will stop.
+
+> **Note:** Hybrid Mode requires the hub to have a reachable IP address on port 14256 for TCP spokes. See the Troubleshooting section if your hub is behind CGNAT.
+
+> **Spoke stations:** The Hybrid Mode button is visible on spoke consoles but will show a warning if clicked — it is a hub-only function.
+
+---
+
 ## Command Reference
 
 ### Connection
@@ -321,7 +339,6 @@ ARDOP FM uses the same ARDOP protocol but is optimised for **FM rather than SSB*
 | Command | Description |
 |---------|-------------|
 | `/auth <password>` | Authenticate with the hub |
-| `/passwd <current> <new>` | Change your password (hub: local, spoke: transmits to hub) |
 | `/encrypt on\|off` | Toggle AES-256-GCM encryption |
 | `/whoami` | Show callsign, transport, connection and auth status |
 
@@ -417,8 +434,8 @@ The network key is only used when encryption is enabled. Plaintext mode stations
 **No audio / PTT not keying**
 - Visit the Status page and run the PTT test
 - Check the audio card number in Settings matches the device shown by `arecord -l`
-- For DigiRig: confirm the USB serial port is `/dev/ttyUSB0`
-- For Xiegu X6100: confirm the CI-V baud rate is 19200
+- For DigiRig Mobile: confirm the USB serial port is `/dev/ttyUSB0`
+- For CI-V radios (Xiegu X6100/G90, Icom IC-705/7300/7100/9700): confirm the CI-V baud rate is 19200 and the serial port is correct (`/dev/ttyACM0` or `/dev/ttyACM1`)
 
 ---
 

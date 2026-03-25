@@ -537,7 +537,13 @@ function loadClock() {
 document.addEventListener("DOMContentLoaded", function() {
   setTimeout(refreshStatus, 2000);
   refreshInterval = setInterval(refreshStatus, 10000);
-  // Auto-sync time silently on page load (hub only)
+  // Auto-sync time silently on page load (all stations)
+  // Uses sync-time-auto which only sets clock if drift > 60s
+  fetch("/api/sync-time-auto", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({unix: Date.now() / 1000})
+  }).catch(() => {});
   syncTime(true);
   loadClock();
   // Refresh clock display every 30s

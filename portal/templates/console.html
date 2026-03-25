@@ -398,12 +398,8 @@
     <!-- FreeDV mode selector (visible only when FreeDV transport active) -->
     <div class="sb-section" id="fdv-mode-panel" style="display:none">
       <div class="sb-title">FreeDV Mode</div>
-      <button class="t-btn" id="fdv-datac1"
-              onclick="setFreeDVMode('DATAC1')">DATAC1</button>
-      <button class="t-btn" id="fdv-datac3"
-              onclick="setFreeDVMode('DATAC3')">DATAC3</button>
-      <button class="t-btn" id="fdv-datac4"
-              onclick="setFreeDVMode('DATAC4')">DATAC4</button>
+      <button class="t-btn active" id="fdv-datac1"
+              onclick="setFreeDVMode('DATAC1')">◉ DATAC1</button>
       <button class="t-btn" id="fdv-announce"
               onclick="fillInput('/announce ')"
               style="margin-top:6px">📢 /announce</button>
@@ -618,9 +614,20 @@ function selectTransport(t) {
     addSys("Note: " + labels[t] +
            " transport — ensure modem service is running");
   }
-  // Show FreeDV mode panel only when FreeDV transport is selected
+  // Show FreeDV mode panel only when FreeDV transport is selected,
+  // and highlight DATAC1 as the active default when panel opens.
   const fdvPanel = document.getElementById("fdv-mode-panel");
-  if (fdvPanel) fdvPanel.style.display = (t === "freedv") ? "block" : "none";
+  if (fdvPanel) {
+    fdvPanel.style.display = (t === "freedv") ? "block" : "none";
+    if (t === "freedv") {
+      const d1btn = document.getElementById("fdv-datac1");
+      if (d1btn) d1btn.className = "t-btn active";
+      if (!ST.freedvMode) {
+        ST.freedvMode = "DATAC1";
+        wsSend({type:"set_freedv_mode", mode: "DATAC1"});
+      }
+    }
+  }
 
   updateStatus();
   wsSend({type:"set_transport", transport: t});
@@ -654,7 +661,7 @@ function toggleHybrid() {
 // ================================================================
 // FreeDV mode selector
 // ================================================================
-const FDV_MODES = ["DATAC1","DATAC3","DATAC4"];
+const FDV_MODES = ["DATAC1"];
 
 function setFreeDVMode(mode) {
   // Highlight selected button
@@ -689,7 +696,8 @@ function wsConnect() {
     // Tell server our current state
     wsSend({type:"hello", call: ST.mycall,
             transport: ST.transport,
-            encrypt: ST.encEnabled});
+            encrypt: ST.encEnabled,
+            authenticated: ST.authenticated});
   };
 
   ST.ws.onmessage = function(evt) {
@@ -907,8 +915,18 @@ function handleCommand(raw) {
     if (ST.role !== "hub" && ST.connState !== 2) {
       addSys("✗ Not connected — use /connect first"); return;
     }
+    if (ST.authenticated) {
+      addSys("ℹ Already authenticated — use /whoami to check status");
+      return;
+    }
     wsSend({type:"auth", password:args});
-    addSys("Authenticating...");
+    if (ST.transport === "freedv" || ST.transport === "ardop-fm") {
+      addSys("Authenticating via " + (ST.transport === "freedv" ? "FreeDV" : "ARDOP FM") +
+             " — this takes 30-90 seconds over radio...");
+      addSys("  The hub must transmit the response back over the air.");
+    } else {
+      addSys("Authenticating...");
+    }
     return;
   }
 
@@ -1115,18 +1133,16 @@ function toggleHelp() {
     ST.helpVisible ? "block" : "none";
 }
 
-// ── Silent time sync (hub only) ──────────────────────────────────────────
+// ── Silent time sync (all stations) ─────────────────────────────────────
+// Fires on every console page load to keep Pi clock accurate.
+// Uses the lighter /api/sync-time-auto which only sets if drift > 60s.
 (function() {
-  if ("{{ settings.role }}" !== "hub") return;
-  const now  = new Date();
-  fetch("/api/set-time", {
+  const now = new Date();
+  fetch("/api/sync-time-auto", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      iso:  now.toISOString().replace(/\.\d+Z$/, "Z"),
-      unix: now.getTime() / 1000
-    })
-  }).catch(() => {});  // silent — no UI feedback needed
+    body: JSON.stringify({unix: now.getTime() / 1000})
+  }).catch(() => {});  // silent — best effort
 })();
 
 // Input keyboard handling

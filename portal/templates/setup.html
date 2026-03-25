@@ -148,6 +148,20 @@
   <!-- Step 1: Radio -->
   <div class="card">
     <h2><span class="step-badge">1</span> Select Radio</h2>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:12px">
+      If you plan to use HF-256 over the internet only (no radio),
+      select <strong>TCP / Internet Only</strong> below and skip hardware detection.
+    </p>
+    <div style="margin-bottom:12px">
+      <button class="btn" id="tcp-only-btn"
+              onclick="selectTcpOnly()"
+              style="background:rgba(56,139,253,0.1);border:1px solid var(--blue);
+                     color:var(--blue);width:100%;padding:10px;font-size:0.95rem">
+        🌐 TCP / Internet Only — No Radio Required
+      </button>
+    </div>
+    <div style="color:var(--muted);font-size:0.8rem;text-align:center;
+                margin-bottom:12px">— or select a radio interface below —</div>
     <div class="radio-grid" id="radio-grid">
       {% for mfr, radios in manufacturers.items() %}
         {% for radio in radios %}
@@ -422,6 +436,11 @@ function checkAudio() {
 
 function checkReady() {
   const btn = document.getElementById("complete-btn");
+  // TCP-only mode needs only a radio selection — no audio card required
+  if (selectedRadio === "tcp-only") {
+    btn.disabled = false;
+    return;
+  }
   btn.disabled = !(selectedRadio &&
     document.getElementById("audio-card").value !== "");
 }
@@ -429,13 +448,20 @@ function checkReady() {
 function completeSetup() {
   if (!selectedRadio)
     return showCompleteStatus("error", "Select a radio first");
-  const ac = document.getElementById("audio-card").value;
-  if (ac === "")
-    return showCompleteStatus("error", "Select an audio card");
+  // TCP-only skips audio card requirement
+  if (selectedRadio !== "tcp-only") {
+    const ac = document.getElementById("audio-card").value;
+    if (ac === "")
+      return showCompleteStatus("error", "Select an audio card");
+  }
 
   const btn = document.getElementById("complete-btn");
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Setting up...';
+
+  const audioCardVal = (selectedRadio === "tcp-only")
+    ? null
+    : parseInt(document.getElementById("audio-card").value);
 
   fetch("/api/complete-setup", {
     method: "POST",
@@ -443,8 +469,8 @@ function completeSetup() {
     body: JSON.stringify({
       radio_id:    selectedRadio,
       serial_port: serialPort || "",
-      audio_card:  parseInt(ac),
-      freedv_mode: selectedMode
+      audio_card:  audioCardVal,
+      freedv_mode: selectedMode || "DATAC1"
     })
   })
   .then(r => r.json())
@@ -475,6 +501,22 @@ function showCompleteStatus(type, msg) {
 
 // Auto-scan on load
 window.onload = () => detectHardware();
+
+function selectTcpOnly() {
+  // Mark TCP-only selection — clears radio selection
+  selectedRadio = "tcp-only";
+  serialPort    = "";
+  audioCard     = "";
+  // Highlight the button
+  document.getElementById("tcp-only-btn").style.background =
+    "rgba(56,139,253,0.3)";
+  document.getElementById("tcp-only-btn").style.borderColor = "#58a6ff";
+  // Clear any highlighted radio card
+  document.querySelectorAll(".radio-card").forEach(c =>
+    c.classList.remove("selected"));
+  hwDot("ok", "TCP/Internet only — no radio hardware needed");
+  checkReady();
+}
 </script>
 </body>
 </html>

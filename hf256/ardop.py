@@ -312,6 +312,9 @@ class ARDOPConnection:
                     self.remote_call = parts[1]
                 self._last_rx_time = time.time()
                 self._last_tx_time = time.time()
+                # Record when the connection was established so callers can
+                # detect an immediate disconnect (hub busy / rejected).
+                self._connect_time = time.time()
 
                 log.info("Connected to %s", self.remote_call)
 
@@ -325,6 +328,13 @@ class ARDOPConnection:
         elif cmd.startswith("DISCONNECTED") or cmd.startswith("NEWSTATE DISC"):
             with self._lock:
                 old_state = self.state
+                # Guard: if already DISCONNECTED (e.g. DISCONNECTED was already
+                # processed and this is the subsequent NEWSTATE DISC), do not
+                # fire on_state_change again — that produces a spurious blank
+                # disconnect event in the UI that overwrites any reason message.
+                if old_state == ARDOPConnection.STATE_DISCONNECTED:
+                    log.info("Disconnected (already disconnected — skipping callback)")
+                    return
                 self.state = ARDOPConnection.STATE_DISCONNECTED
                 self.remote_call = None
 
@@ -413,15 +423,19 @@ class ARDOPConnection:
                 return
 
     def close(self):
-        """Close connection"""
+        """Close connection and stop watchdog"""
         self.running = False
+        # Set state to DISCONNECTED so the watchdog thread exits cleanly
+        # rather than firing the inactivity timeout on a dead transport
+        with self._lock:
+            self.state = ARDOPConnection.STATE_DISCONNECTED
 
         if self.cmd_socket:
             try:
                 self.cmd_socket.close()
             except:
                 pass
-        
+
         if self.data_socket and self.data_socket != self.cmd_socket:
             try:
                 self.data_socket.close()

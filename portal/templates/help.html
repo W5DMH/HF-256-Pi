@@ -327,20 +327,14 @@ All stations on your network must share the same AES-256 encryption key. Either 
 <td>Standard — good balance of speed and robustness</td>
 </tr>
 <tr>
-<td>DATAC3</td>
-<td>0.5 kHz</td>
-<td>~450 bps</td>
-<td>Crowded bands, narrow filters, marginal conditions</td>
-</tr>
-<tr>
-<td>DATAC4</td>
-<td>2.5 kHz</td>
-<td>~2200 bps</td>
-<td>Excellent conditions, fast file transfers</td>
+<td>Announce</td>
+<td>1.25 kHz</td>
+<td>~980 bps</td>
+<td>Announce to all stations simultaneously, fire and forget no ARQ</td>
 </tr>
 </tbody>
 </table>
-<p><strong>DATAC1 is recommended as the starting point.</strong> If you are having trouble completing connections, try DATAC3. If conditions are excellent and you need faster file transfers, try DATAC4.</p>
+<p><strong>DATAC1 is the default and only speed as testing showed no real improvement in other FREEDV speeds for this application.</strong></p>
 <hr />
 <h2 id="tcp-mode-private-encrypted-internet-communications">TCP Mode — Private Encrypted Internet Communications</h2>
 <p>TCP mode connects two HF-256 stations directly over the internet or a local area network without any radio hardware. Despite the name, TCP mode is not limited to local use — it works across the public internet anywhere two stations can reach each other over port 14256.</p>
@@ -358,13 +352,6 @@ All stations on your network must share the same AES-256 encryption key. Either 
 </code></pre>
 <p>The hub must have port 14256 open and reachable. For a hub behind a home router, standard port forwarding applies. Speed over TCP is limited only by the internet connection — file transfers that take 15 minutes over HF complete in seconds.</p>
 <hr />
-<h2 id="ardop-hf-alternative-hf-modem">ARDOP HF — Alternative HF Modem</h2>
-<p>ARDOP (Amateur Radio Digital Open Protocol) is an alternative HF data modem supported by HF-256. It covers the same use cases as FreeDV — point-to-point HF connections for chat, store-and-forward messaging, and file transfer — and is included for operators who already have ARDOP infrastructure or who want a second HF option.</p>
-<p><strong>FreeDV vs ARDOP HF — choosing between them:</strong></p>
-<p>FreeDV is the recommended HF transport for new deployments. It is fully open-source at every layer including the DSP codec, has no external dependencies beyond <code>freedvtnc2</code>, and its DATAC modes are purpose-designed for data. ARDOP is a mature and well-proven protocol with a large existing user base and strong interoperability with other ARDOP software.</p>
-<p>Both operate over the same HF transceiver hardware. If your group already uses ARDOP for other applications, selecting ARDOP HF in HF-256 lets you share frequency plans and operating schedules with that existing network.</p>
-<p><strong>Selecting ARDOP HF:</strong> Click <strong>ARDOP HF</strong> in the console sidebar. The modem starts automatically. Connect and operate identically to FreeDV mode — the transport layer is transparent to the user.</p>
-<hr />
 <h2 id="ardop-fm-local-vhfuhf-and-fm-band-communications">ARDOP FM — Local VHF/UHF and FM Band Communications</h2>
 <p>ARDOP FM uses the same ARDOP protocol but is optimised for <strong>FM rather than SSB</strong>, making it suitable for VHF, UHF, and any FM-capable band. This opens HF-256 to a much wider range of local and regional communication scenarios that do not require HF propagation.</p>
 <p><strong>Use cases for ARDOP FM:</strong></p>
@@ -376,6 +363,20 @@ All stations on your network must share the same AES-256 encryption key. Either 
 </ul>
 <p><strong>Speed:</strong> ARDOP FM operates considerably faster than HF modes. On a clear VHF FM path, data rates of several kilobits per second are achievable, making file transfers that would take many minutes on HF complete in seconds.</p>
 <p><strong>Selecting ARDOP FM:</strong> Click <strong>ARDOP FM</strong> in the console sidebar. The same DigiRig Mobile or compatible USB audio interface used for HF works on VHF — simply connect it to your VHF/UHF radio instead.</p>
+<hr />
+<h2 id="hybrid-mode">Hybrid Mode — Simultaneous TCP and Radio</h2>
+<p>Hybrid Mode is a <strong>hub-only feature</strong> that allows the hub station to accept TCP/internet connections and radio connections (FreeDV or ARDOP FM) simultaneously. A spoke with internet access can connect via TCP and leave messages for a spoke that only has radio access — and vice versa. All messages go through the same store-and-forward system regardless of transport.</p>
+<h3 id="enabling-hybrid-mode">Enabling Hybrid Mode</h3>
+<p>Click the <strong>Hybrid Mode</strong> button in the console sidebar Transport section. The button uses a dashed border to distinguish it from the mutually-exclusive transport buttons. When active it shows ◉ Hybrid Mode.</p>
+<p>Once enabled:</p>
+<ul>
+<li>The TCP server on port 14256 stays running permanently</li>
+<li>You can freely switch between FreeDV and ARDOP FM without losing TCP connectivity</li>
+<li>TCP spokes can connect while radio spokes connect over the air simultaneously</li>
+<li>Clicking TCP/Internet while Hybrid is on shows a note that TCP is already running</li>
+</ul>
+<p><strong>Disabling Hybrid Mode:</strong> Click the Hybrid Mode button again to toggle it off.</p>
+<blockquote><p><strong>Note:</strong> Spoke stations will see a warning if they click Hybrid Mode — it is a hub-only function.</p></blockquote>
 <hr />
 <h2 id="command-reference">Command Reference</h2>
 <h3 id="connection">Connection</h3>
