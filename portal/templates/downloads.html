@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HF-256 Downloads</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+<meta name="theme-color" content="#0d1117">
+<style>
+  :root {
+    --bg:#0d1117;--surface:#161b22;--border:#30363d;
+    --text:#e6edf3;--muted:#8b949e;--accent:#2ea043;
+    --blue:#388bfd;--red:#da3633;--radius:8px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+       font-size:15px;line-height:1.6;}
+  .container{max-width:860px;margin:0 auto;padding:20px 16px;}
+  nav{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap;}
+  .nav-btn{padding:6px 14px;border-radius:6px;text-decoration:none;
+           font-size:.88rem;border:1px solid var(--border);
+           color:var(--text);background:var(--surface);}
+  .nav-btn.active{background:var(--blue);border-color:var(--blue);color:#fff;}
+  .hf-logo{display:inline-flex;align-items:center;gap:8px;
+           text-decoration:none;margin-right:4px;}
+  .hf-logo img{width:28px;height:28px;border-radius:6px;
+               filter:drop-shadow(0 0 4px rgba(46,160,67,.4));}
+  .hf-logo span{font-size:.88rem;font-weight:700;color:var(--accent);
+                letter-spacing:.04em;display:none;}
+  @media(min-width:480px){.hf-logo span{display:inline;}}
+  .page-header{margin-bottom:20px;}
+  .page-header h1{font-size:1.4rem;color:var(--blue);margin-bottom:4px;}
+  .page-header p{color:var(--muted);font-size:.9rem;}
+  .toolbar{display:flex;align-items:center;gap:10px;
+           margin-bottom:16px;flex-wrap:wrap;}
+  .toolbar-count{color:var(--muted);font-size:.88rem;flex:1;}
+  .btn{display:inline-flex;align-items:center;gap:5px;
+       padding:5px 12px;border-radius:5px;border:none;
+       cursor:pointer;font-size:.82rem;font-weight:500;
+       text-decoration:none;transition:opacity .15s;}
+  .btn:disabled{opacity:.45;cursor:not-allowed;}
+  .btn-primary{background:var(--blue);color:#fff;}
+  .btn-danger{background:var(--red);color:#fff;}
+  .btn-secondary{background:var(--surface);border:1px solid var(--border);color:var(--text);}
+  .file-table{width:100%;border-collapse:collapse;}
+  .file-table th{text-align:left;padding:8px 12px;font-size:.78rem;font-weight:600;
+                 text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+                 border-bottom:1px solid var(--border);background:var(--surface);}
+  .file-table td{padding:10px 12px;border-bottom:1px solid var(--border);
+                 font-size:.9rem;vertical-align:middle;}
+  .file-table tr:hover td{background:rgba(56,139,253,.04);}
+  .file-name{font-weight:600;word-break:break-all;max-width:260px;}
+  .file-ext{display:inline-block;font-size:.7rem;font-weight:700;
+            padding:1px 5px;border-radius:3px;margin-left:6px;
+            text-transform:uppercase;vertical-align:middle;
+            background:rgba(56,139,253,.15);color:var(--blue);}
+  .file-size{color:var(--muted);white-space:nowrap;}
+  .file-hub{color:var(--accent);font-family:monospace;font-size:.85rem;white-space:nowrap;}
+  .file-date{color:var(--muted);font-size:.82rem;white-space:nowrap;}
+  .empty-state{text-align:center;padding:60px 20px;
+               border:1px solid var(--border);border-radius:var(--radius);
+               background:var(--surface);}
+  .empty-icon{font-size:2.5rem;margin-bottom:12px;}
+  .empty-title{font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:6px;}
+  .empty-sub{color:var(--muted);font-size:.88rem;max-width:360px;
+             margin:0 auto 20px;word-break:break-all;}
+  .diag{background:#1a1a2e;border:1px solid #333;border-radius:6px;
+        padding:10px 14px;font-family:monospace;font-size:.8rem;
+        color:#aaa;margin-bottom:14px;display:none;}
+  .diag.show{display:block;}
+  #status-line{padding:8px 0;font-size:.88rem;min-height:2em;}
+  .ok{color:var(--accent);}  .err{color:var(--red);}  .warn{color:#d29922;}
+</style>
+</head>
+<body>
+<div class="container">
+  <nav>
+    <a class="hf-logo" href="/status">
+      <img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span></a>
+    <a class="nav-btn" href="/status">Status</a>
+    <a class="nav-btn" href="/settings">Settings</a>
+    <a class="nav-btn" href="/console">Console</a>
+    <a class="nav-btn" href="/files">Hub Files</a>
+    <a class="nav-btn active" href="/downloads">Downloads</a>
+    <a class="nav-btn" href="/help">Help</a>
+  </nav>
+
+  <div class="page-header">
+    <h1>&#x1F4E5; Downloads</h1>
+    <p>Files received from hub stations. Stored at
+       <code>/home/pi/.hf256/downloads/</code> on this Pi.</p>
+  </div>
+
+  <!-- Live diagnostic line — always visible until files load -->
+  <div id="status-line">Initialising JavaScript...</div>
+
+  <div class="toolbar">
+    <span class="toolbar-count" id="file-count"></span>
+    <button class="btn btn-secondary" onclick="loadFiles()">&#x21BB; Refresh</button>
+    <a class="btn btn-secondary" href="/api/downloads" target="_blank"
+       style="font-size:.75rem">Test API &#x2197;</a>
+  </div>
+
+  <div id="file-area"></div>
+
+  <div style="text-align:center;color:var(--muted);font-size:.78rem;margin-top:20px">
+    HF-256 MSA &bull; {{ system_info.hostname }} &bull; {{ system_info.ip_address }}
+  </div>
+</div>
+
+<script>
+// ── Step 1: confirm JS is running ─────────────────────────────────
+var statusEl = document.getElementById("status-line");
+statusEl.innerHTML = '<span class="ok">&#x2713; JavaScript running</span> &mdash; calling /api/downloads...';
+
+// ── Helpers ───────────────────────────────────────────────────────
+function setStatus(cls, msg) {
+  statusEl.className = cls;
+  statusEl.innerHTML = msg;
+}
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + " KB";
+  return (bytes/1048576).toFixed(2) + " MB";
+}
+
+function fmtDate(ts) {
+  var d = new Date(ts * 1000);
+  return d.toLocaleDateString() + " " +
+         d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+}
+
+function extOf(name) {
+  var i = name.lastIndexOf(".");
+  return (i > 0) ? name.slice(i+1).toLowerCase() : "";
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ── Load ──────────────────────────────────────────────────────────
+function loadFiles() {
+  document.getElementById("file-count").textContent = "";
+  document.getElementById("file-area").innerHTML = "";
+  setStatus("", "Fetching /api/downloads...");
+
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", "/api/downloads", true);
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState !== 4) return;
+
+    setStatus("", "HTTP " + xhr.status + " received — parsing response...");
+
+    if (xhr.status !== 200) {
+      setStatus("err",
+        "&#x2717; HTTP " + xhr.status + " from /api/downloads. " +
+        "Raw response: " + escHtml(xhr.responseText.slice(0, 300)));
+      return;
+    }
+
+    var data;
+    try {
+      data = JSON.parse(xhr.responseText);
+    } catch(e) {
+      setStatus("err",
+        "&#x2717; JSON parse error: " + e.message +
+        "<br>Raw: " + escHtml(xhr.responseText.slice(0, 300)));
+      return;
+    }
+
+    if (data.error) {
+      setStatus("err", "&#x2717; API error: " + escHtml(data.error));
+      return;
+    }
+
+    var files = data.files || [];
+    setStatus("ok",
+      "&#x2713; API OK &mdash; " + files.length + " file(s) in downloads folder");
+    render(files);
+  };
+
+  xhr.onerror = function() {
+    setStatus("err", "&#x2717; Network error — cannot reach /api/downloads");
+  };
+
+  xhr.ontimeout = function() {
+    setStatus("err", "&#x2717; Timeout reaching /api/downloads");
+  };
+
+  xhr.timeout = 10000;
+  xhr.send();
+}
+
+// ── Render ────────────────────────────────────────────────────────
+function render(files) {
+  var countEl = document.getElementById("file-count");
+  var area    = document.getElementById("file-area");
+
+  if (files.length === 0) {
+    countEl.textContent = "No files yet";
+    area.innerHTML =
+      '<div class="empty-state">' +
+      '<div class="empty-icon">&#x1F4ED;</div>' +
+      '<div class="empty-title">No downloaded files yet</div>' +
+      '<div class="empty-sub">Use <code>/download &lt;filename&gt;</code> in the ' +
+      'Console after connecting to a hub. Files appear here automatically.</div>' +
+      '<a class="btn btn-primary" href="/console">Open Console</a>' +
+      '</div>';
+    return;
+  }
+
+  countEl.textContent = files.length + " file" + (files.length === 1 ? "" : "s");
+
+  var html = '<table class="file-table"><thead><tr>' +
+    '<th>File</th><th>Size</th><th>From Hub</th><th>Downloaded</th><th></th>' +
+    '</tr></thead><tbody>';
+
+  for (var i = 0; i < files.length; i++) {
+    var f   = files[i];
+    var ext = extOf(f.name);
+    var extBadge = ext ? '<span class="file-ext">' + escHtml(ext) + '</span>' : "";
+    var rowId = "row-" + i;
+    html +=
+      '<tr id="' + escHtml(rowId) + '">' +
+      '<td class="file-name">' + escHtml(f.name) + extBadge + '</td>' +
+      '<td class="file-size">' + fmtSize(f.size) + '</td>' +
+      '<td class="file-hub">'  + escHtml(f.hub)  + '</td>' +
+      '<td class="file-date">' + fmtDate(f.downloaded) + '</td>' +
+      '<td style="text-align:right;white-space:nowrap">' +
+        '<a class="btn btn-primary" ' +
+           'href="/api/downloads/file/' + encodeURIComponent(f.name) + '" ' +
+           'style="margin-right:6px">&#x2B07; Open</a>' +
+        '<button class="btn btn-danger" ' +
+           'onclick="deleteFile(' + JSON.stringify(f.name) + ',' +
+           JSON.stringify(rowId) + ')">&#x1F5D1;</button>' +
+      '</td></tr>';
+  }
+  html += '</tbody></table>';
+  area.innerHTML = html;
+}
+
+// ── Delete ────────────────────────────────────────────────────────
+function deleteFile(name, rowId) {
+  if (!confirm("Delete " + name + "?\nThis cannot be undone.")) return;
+
+  var xhr = new XMLHttpRequest();
+  xhr.open("POST", "/api/downloads/delete", true);
+  xhr.setRequestHeader("Content-Type", "application/json");
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState !== 4) return;
+    var data;
+    try { data = JSON.parse(xhr.responseText); } catch(e) { data = {}; }
+    if (data.ok) {
+      var row = document.getElementById(rowId);
+      if (row) row.remove();
+      var remaining = document.querySelectorAll(".file-table tbody tr").length;
+      document.getElementById("file-count").textContent =
+        remaining + " file" + (remaining === 1 ? "" : "s");
+      if (remaining === 0) loadFiles();
+    } else {
+      alert("Delete failed: " + (data.error || "unknown error"));
+    }
+  };
+  xhr.send(JSON.stringify({filename: name}));
+}
+
+// ── Boot ──────────────────────────────────────────────────────────
+loadFiles();
+</script>
+</body>
+</html>

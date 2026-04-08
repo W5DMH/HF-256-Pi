@@ -28,10 +28,35 @@ from flask_sock import Sock
 
 from hardware import (
     load_radios, detect_serial_ports, detect_audio_devices,
-    find_digirig, find_x6100, test_cat_connection, test_ptt,
+    find_digirig, test_cat_connection, test_ptt,
     release_ptt, set_audio_levels, get_audio_controls,
     get_system_info, get_audio_levels
 )
+
+# ------------------------------------------------------------------ #
+# Multi-session infrastructure  (v0.1.0)
+# ------------------------------------------------------------------ #
+try:
+    from hf256.session_manager import SessionManager
+    from hf256.tcp_transport   import TCPServerTransport
+    from hf256.hub_core        import (
+        HubCore, hub_pack, hub_unpack,
+        HUB_TYPE_CHAT,        HUB_TYPE_FL_REQ,      HUB_TYPE_FL_RSP,
+        HUB_TYPE_FILE_DATA,   HUB_TYPE_DL_REQ,      HUB_TYPE_COMPLETE,
+        HUB_TYPE_ERROR,       HUB_TYPE_AUTH_REQ,    HUB_TYPE_AUTH_RSP,
+        HUB_TYPE_STORE,       HUB_TYPE_RETRIEVE,    HUB_TYPE_STORE_ACK,
+        HUB_TYPE_RETRIEVE_RSP,HUB_TYPE_PASSWD_REQ,  HUB_TYPE_PASSWD_RSP,
+        HUB_TYPE_BROADCAST,   HUB_TYPE_PING,        HUB_TYPE_PONG,
+    )
+    _MSA_AVAILABLE = True
+except ImportError as _msa_err:
+    # Graceful degradation — portal still works without multi-session modules
+    import logging as _log
+    _log.getLogger("hf256").warning(
+        "Multi-session modules not found (%s) — "
+        "running in single-session compatibility mode", _msa_err
+    )
+    _MSA_AVAILABLE = False
 
 # ------------------------------------------------------------------ #
 # Paths
@@ -323,8 +348,102 @@ def files_page():
                            settings=load_settings())
 
 
-@app.route("/help")
-def help_page():
+@app.route("/downloads")
+def downloads_page():
+    """Files downloaded from hubs."""
+    return render_template("downloads.html",
+                           system_info=get_system_info(),
+                           settings=load_settings())
+
+
+@app.route("/api/downloads")
+def api_downloads_list():
+    """Return list of files downloaded from hubs, newest first."""
+    try:
+        DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        files = []
+        for f in sorted(DOWNLOADS_DIR.iterdir(),
+                        key=lambda x: x.stat().st_mtime, reverse=True):
+            if f.is_file() and not f.name.endswith(".meta"):
+                meta_path = DOWNLOADS_DIR / (f.name + ".meta")
+                meta = {}
+                if meta_path.exists():
+                    try:
+                        meta = json.loads(meta_path.read_text())
+                    except Exception:
+                        pass
+                files.append({
+                    "name":       f.name,
+                    "size":       f.stat().st_size,
+                    "modified":   int(f.stat().st_mtime),
+                    "hub":        meta.get("hub", "unknown"),
+                    "downloaded": meta.get("downloaded",
+                                          int(f.stat().st_mtime)),
+                })
+        return jsonify({"files": files})
+    except Exception as exc:
+        app.logger.error("api_downloads_list error: %s", exc)
+        return jsonify({"files": [], "error": str(exc)})
+
+
+@app.route("/api/downloads/save", methods=["POST"])
+def api_downloads_save():
+    """
+    Save a file assembled by the browser from download_progress chunks.
+    Body JSON: {"filename": str, "data_hex": str, "hub": str}
+    """
+    try:
+        data     = request.get_json(force=True) or {}
+        filename = Path(data.get("filename", "")).name
+        data_hex = data.get("data_hex", "")
+        hub      = data.get("hub", "unknown")
+        if not filename:
+            return jsonify({"ok": False, "error": "Missing filename"}), 400
+        if not data_hex:
+            return jsonify({"ok": False, "error": "No data"}), 400
+        DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        dest = DOWNLOADS_DIR / filename
+        dest.write_bytes(bytes.fromhex(data_hex))
+        meta_path = DOWNLOADS_DIR / (filename + ".meta")
+        meta_path.write_text(json.dumps({
+            "hub":        hub,
+            "downloaded": int(time.time()),
+            "size":       dest.stat().st_size,
+        }, indent=2))
+        app.logger.info("Downloads: saved %s (%d bytes) from %s",
+                        filename, dest.stat().st_size, hub)
+        return jsonify({"ok": True, "size": dest.stat().st_size})
+    except Exception as exc:
+        app.logger.error("api_downloads_save error: %s", exc)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/api/downloads/file/<path:filename>")
+def api_downloads_file(filename):
+    """Serve a downloaded file for the browser to open or save."""
+    from flask import send_from_directory
+    safe = Path(filename).name
+    if not (DOWNLOADS_DIR / safe).exists():
+        return jsonify({"error": "Not found"}), 404
+    return send_from_directory(str(DOWNLOADS_DIR), safe, as_attachment=True)
+
+
+@app.route("/api/downloads/delete", methods=["POST"])
+def api_downloads_delete():
+    """Delete a downloaded file and its metadata sidecar."""
+    try:
+        data     = request.get_json(force=True) or {}
+        filename = Path(data.get("filename", "")).name
+        if not filename:
+            return jsonify({"ok": False, "error": "Missing filename"}), 400
+        for p in [DOWNLOADS_DIR / filename,
+                  DOWNLOADS_DIR / (filename + ".meta")]:
+            if p.exists():
+                p.unlink()
+        app.logger.info("Downloads: deleted %s", filename)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
     """Serve the pre-rendered help page."""
     return render_template("help.html",
                            system_info=get_system_info(),
@@ -336,6 +455,7 @@ def help_page():
 # ------------------------------------------------------------------ #
 
 HUB_FILES_DIR = Path("/home/pi/.hf256/hub_files")
+DOWNLOADS_DIR = Path("/home/pi/.hf256/downloads")   # files received from hubs
 
 @app.route("/api/hub-files", methods=["GET"])
 def api_hub_files_list():
@@ -425,7 +545,8 @@ def api_detect_hardware():
     serial_ports  = detect_serial_ports()
     audio_devices = detect_audio_devices()
     digirig       = find_digirig()
-    x6100         = find_x6100()
+    # X6100 detection removed — X6100 uses CM108 USB audio (MMAP-only)
+    # which requires PulseAudio. HF-256 uses direct ALSA only.
 
     recommended_port  = None
     recommended_audio = None
@@ -433,9 +554,6 @@ def api_detect_hardware():
     if digirig.get("found"):
         recommended_port  = digirig.get("serial_port")
         recommended_audio = digirig.get("audio_card")
-    elif x6100.get("found"):
-        recommended_port  = x6100.get("serial_port")
-        recommended_audio = x6100.get("audio_card")
     elif serial_ports:
         recommended_port = serial_ports[0]["port"]
     if recommended_audio is None:
@@ -448,7 +566,7 @@ def api_detect_hardware():
         "serial_ports":  serial_ports,
         "audio_devices": audio_devices,
         "digirig":       digirig,
-        "x6100":         x6100,
+        "x6100":         {"found": False},   # kept for JS compat, always false
         "recommended": {
             "serial_port": recommended_port,
             "audio_card":  recommended_audio
@@ -511,7 +629,6 @@ def api_complete_setup():
     radio_id    = data.get("radio_id")
     serial_port = data.get("serial_port", "")
     audio_card  = data.get("audio_card")
-    freedv_mode = data.get("freedv_mode", "DATAC1")
 
     # TCP-only mode — no radio hardware required
     if radio_id == "tcp-only":
@@ -528,11 +645,9 @@ def api_complete_setup():
 RADIO_ID=tcp-only
 SERIAL_PORT=
 AUDIO_CARD=
-FREEDV_MODE=DATAC1
 TX_OUTPUT_VOLUME=0
 
 RIGCTLD_CMD=""
-FREEDVTNC2_CMD=""
 """
             with open(CONFIG_ENV, "w") as f:
                 f.write(env_content)
@@ -564,10 +679,6 @@ FREEDVTNC2_CMD=""
         update_alsa_config(audio_card)
         set_audio_levels(audio_card, speaker_pct=80, mic_pct=75)
 
-        # Generate commands
-        freedvtnc2_cmd = generate_freedvtnc2_command(
-            radio_id, serial_port, audio_card, freedv_mode
-        )
         rigctld_cmd = generate_rigctld_command(radio_id, serial_port) \
             if serial_port else ""
 
@@ -579,11 +690,9 @@ FREEDVTNC2_CMD=""
 RADIO_ID={radio_id}
 SERIAL_PORT={serial_port}
 AUDIO_CARD={audio_card}
-FREEDV_MODE={freedv_mode}
 TX_OUTPUT_VOLUME=0
 
 RIGCTLD_CMD="{rigctld_cmd}"
-FREEDVTNC2_CMD="{freedvtnc2_cmd}"
 """
         with open(CONFIG_ENV, "w") as f:
             f.write(env_content)
@@ -593,24 +702,10 @@ FREEDVTNC2_CMD="{freedvtnc2_cmd}"
         SETUP_FLAG.touch()
         os.chmod(SETUP_FLAG, 0o644)
 
-        # Start services
+        # Reload systemd and restart the portal; ardopc is launched
+        # on demand by ModemManager when the user selects ARDOP transport.
         subprocess.run(["systemctl", "daemon-reload"],
                        capture_output=True)
-        if serial_port:
-            subprocess.run(["systemctl", "enable", "--now", "rigctld"],
-                           capture_output=True)
-        subprocess.run(["systemctl", "enable", "--now", "freedvtnc2"],
-                       capture_output=True)
-
-        # Wait for freedvtnc2 KISS port
-        for _ in range(30):
-            result = subprocess.run(
-                ["ss", "-tln"], capture_output=True, text=True
-            )
-            if ":8001" in result.stdout:
-                break
-            time.sleep(1)
-
         subprocess.run(["systemctl", "restart", "hf256"],
                        capture_output=True)
 
@@ -654,22 +749,29 @@ def api_save_settings():
 
     # Update settings
     current.update({
-        "callsign":           callsign,
-        "role":               role,
-        "hub_address":        data.get("hub_address",
-                                       current["hub_address"]),
-        "encryption_enabled": data.get("encryption_enabled",
-                                       current["encryption_enabled"]),
-        "wifi_mode":          data.get("wifi_mode",
-                                       current["wifi_mode"]),
-        "ap_ssid":            data.get("ap_ssid",
-                                       current["ap_ssid"]),
-        "ap_password":        data.get("ap_password",
-                                       current["ap_password"]),
-        "client_ssid":        data.get("client_ssid",
-                                       current["client_ssid"]),
-        "client_password":    data.get("client_password",
-                                       current["client_password"]),
+        "callsign":             callsign,
+        "role":                 role,
+        "hub_address":          data.get("hub_address",
+                                         current["hub_address"]),
+        "encryption_enabled":   data.get("encryption_enabled",
+                                         current["encryption_enabled"]),
+        "wifi_mode":            data.get("wifi_mode",
+                                         current["wifi_mode"]),
+        "ap_ssid":              data.get("ap_ssid",
+                                         current["ap_ssid"]),
+        "ap_password":          data.get("ap_password",
+                                         current["ap_password"]),
+        "client_ssid":          data.get("client_ssid",
+                                         current["client_ssid"]),
+        "client_password":      data.get("client_password",
+                                         current["client_password"]),
+        # Session management — hub only but harmless to save on spoke
+        "max_sessions":         int(data.get("max_sessions",
+                                    current.get("max_sessions", 10))),
+        "session_idle_timeout": int(data.get("session_idle_timeout",
+                                    current.get("session_idle_timeout", 300))),
+        "session_auth_timeout": int(data.get("session_auth_timeout",
+                                    current.get("session_auth_timeout", 120))),
     })
     current["network_key_set"] = KEY_FILE.exists()
 
@@ -677,9 +779,24 @@ def api_save_settings():
         if callsign and callsign != "N0CALL" and role:
             SETUP_FLAG.touch()
             os.chmod(SETUP_FLAG, 0o644)
+
+        # If role just became hub and hub core is not yet initialised,
+        # start hub services now — no reboot needed.
+        # This covers the first-boot case where the portal started before
+        # the operator set role=hub in the setup wizard.
+        if role == "hub" and _hub_core is None:
+            app.logger.info(
+                "api_save_settings: role=hub and hub core not initialised "
+                "— starting hub services now"
+            )
+            threading.Thread(
+                target=_start_hub_services,
+                daemon=True, name="hub-services-init",
+            ).start()
+
         return jsonify({"success": True,
                         "message": "Settings saved",
-                        "restart_required": True})
+                        "restart_required": False})
     return jsonify({"success": False,
                     "error": "Failed to save settings"}), 500
 
@@ -871,7 +988,6 @@ def api_service_status():
     ssid_disp = ap_ssid if wifi_mode == "ap" else cl_ssid
 
     portal_up  = svc_active("hf256-portal")
-    fdv_up     = svc_active("freedvtnc2")
     rig_up     = svc_active("rigctld")
     ardop_up   = _modem_manager.ardop_running()
 
@@ -882,17 +998,12 @@ def api_service_status():
     transport = _active_transport
 
     # Human-readable mode string for TFT display
-    if transport == "tcp":
-        mode_str = "TCP"
-    elif transport == "ardop-fm":
+    if transport == "ardop-fm":
         mode_str = "ARDOP FM"
     elif transport == "ardop-hf":
         mode_str = "ARDOP HF"
-    elif transport == "freedv":
-        # Include the FreeDV sub-mode from config.env
-        cfg      = load_config_env()
-        fdv_mode = cfg.get("FREEDV_MODE", "DATAC1")
-        mode_str = f"FreeDV {fdv_mode}"
+    elif transport == "tcp":
+        mode_str = "TCP"
     else:
         mode_str = transport.upper() if transport else "TCP"
 
@@ -904,9 +1015,6 @@ def api_service_status():
     elif transport in ("ardop-hf", "ardop-fm"):
         # ARDOP: need ardopc process running
         overall = "Running" if ardop_up else "Partial"
-    elif transport == "freedv":
-        # FreeDV: need both freedvtnc2 and rigctld
-        overall = "Running" if (fdv_up and rig_up) else "Partial"
     else:
         overall = "Running" if portal_up else "Starting"
 
@@ -917,7 +1025,6 @@ def api_service_status():
         "active_transport": transport,
         "mode":           mode_str,        # human-readable for TFT display
         "overall_status": overall,
-        "freedvtnc2": {"running": fdv_up},
         "rigctld":    {"running": rig_up},
         "portal":     {"running": portal_up},
         "ardopc":     {"running": ardop_up},
@@ -1087,7 +1194,7 @@ def api_get_time():
 
 @app.route("/api/service/<service>/<action>", methods=["POST"])
 def api_service_control(service, action):
-    allowed = ["freedvtnc2", "rigctld",
+    allowed = ["ardopc", "rigctld",
                "hostapd", "dnsmasq", "hf256-portal"]
     if service not in allowed:
         return jsonify({"success": False,
@@ -1108,16 +1215,12 @@ def api_service_control(service, action):
 
 @app.route("/api/restart-services", methods=["POST"])
 def api_restart_services():
+    """Restart ardopc and the hf256 portal service."""
     try:
-        subprocess.run(["systemctl", "restart", "freedvtnc2"],
-                       capture_output=True, timeout=15)
-        for _ in range(30):
-            r = subprocess.run(
-                ["ss", "-tln"], capture_output=True, text=True
-            )
-            if ":8001" in r.stdout:
-                break
-            time.sleep(1)
+        # ardopc is managed by ModemManager directly (not systemctl),
+        # so we use the modem manager to restart it if it's running.
+        _modem_manager.stop_all()
+        time.sleep(1)
         subprocess.run(["systemctl", "restart", "hf256"],
                        capture_output=True, timeout=15)
         return jsonify({"success": True,
@@ -1129,8 +1232,7 @@ def api_restart_services():
 @app.route("/api/reset-setup", methods=["POST"])
 def api_reset_setup():
     try:
-        subprocess.run(["systemctl", "stop", "freedvtnc2"],
-                       capture_output=True)
+        _modem_manager.stop_all()
         if SETUP_FLAG.exists():
             SETUP_FLAG.unlink()
         if CONFIG_ENV.exists():
@@ -1143,7 +1245,7 @@ def api_reset_setup():
 
 @app.route("/api/logs/<service>")
 def api_logs(service):
-    allowed = ["freedvtnc2", "rigctld",
+    allowed = ["ardopc", "rigctld",
                "hf256-portal", "hf256-firstboot",
                "hostapd", "dnsmasq"]
     if service not in allowed:
@@ -1168,10 +1270,7 @@ def api_modem_status():
     transport = _active_transport
 
     # In TCP mode the modem is not in use — report that clearly
-    # rather than querying freedvtnc2 which may still be running
-    # as a background service and would return misleading DATAC1 info.
     if transport == "tcp":
-        # TCP is always available when the portal is running
         return jsonify({
             "success": True, "online": True,
             "mode": "TCP", "ptt": "N/A",
@@ -1183,38 +1282,15 @@ def api_modem_status():
         ardop_up = _modem_manager.ardop_running()
         return jsonify({
             "success": True, "online": ardop_up,
-            "mode": "ARDOP-FM" if transport == "ardop-fm" else "ARDOP-HF",
+            "mode": "ARDOP FM" if transport == "ardop-fm" else "ARDOP HF",
             "ptt": "--", "channel": "--",
             "active_transport": transport
         })
 
-    # FreeDV — query freedvtnc2 command port for live status
-    ok, response = freedvtnc2_command("STATUS")
-    if not ok:
-        return jsonify({"success": False, "online": False,
-                        "error": response,
-                        "active_transport": transport})
-    status = {"success": True, "online": True,
-              "active_transport": transport}
-    if response.startswith("OK STATUS "):
-        for part in response[10:].split():
-            if "=" in part:
-                k, v = part.split("=", 1)
-                status[k.lower()] = v
-    return jsonify(status)
-
-
-@app.route("/api/set-freedv-mode", methods=["POST"])
-def api_set_freedv_mode():
-    data = request.json or {}
-    mode = data.get("mode", "DATAC1")
-    valid = ["DATAC1", "DATAC3", "DATAC4"]
-    if mode not in valid:
-        return jsonify({"success": False,
-                        "error": f"Mode must be one of {valid}"}), 400
-    ok, response = freedvtnc2_command(f"MODE {mode}")
-    return jsonify({"success": ok, "mode": mode,
-                    "response": response})
+    # Unknown transport
+    return jsonify({"success": False, "online": False,
+                    "error": f"Unknown transport: {transport}",
+                    "active_transport": transport})
 
 
 @app.route("/api/reboot", methods=["POST"])
@@ -1265,6 +1341,11 @@ _HUB_TYPE_STORE_ACK    = 0x14   # Hub → spoke: message stored confirmation
 _HUB_TYPE_RETRIEVE_RSP = 0x15   # Hub → spoke: retrieve completion notice
 _HUB_TYPE_PASSWD_REQ   = 0x16   # spoke→hub: change password request
 _HUB_TYPE_PASSWD_RSP   = 0x17   # hub→spoke: password change result
+# v0.1.0 multi-session additions
+_HUB_TYPE_BROADCAST    = 0x20   # hub → all authenticated spokes
+_HUB_TYPE_PING         = 0x22   # keepalive ping
+_HUB_TYPE_PONG         = 0x23   # keepalive response
+_HUB_TYPE_CONN_ACK     = 0x30   # hub → spoke: connected, please /auth
 
 
 def _chat_payload(sender: str, text: str) -> bytes:
@@ -1369,9 +1450,9 @@ def _hub_unpack(data: bytes) -> tuple:
 class ModemManager:
     """
     Manages exclusive ownership of the audio card and PTT port across
-    the three software modems: freedvtnc2 (FreeDV), ardopc HF, ardopc FM.
+    the ARDOP HF and ARDOP FM modems (both use ardopc).
 
-    Only one modem may run at a time because all three share the same
+    Only one modem mode may run at a time because both share the same
     USB audio device and serial PTT port.
 
     The portal runs as root so subprocess.Popen and systemctl work
@@ -1379,8 +1460,8 @@ class ModemManager:
 
     Usage:
         mm = ModemManager()
-        ok, msg = mm.switch_to("ardop-hf")   # stops others, starts ardopc
-        ok, msg = mm.switch_to("freedv")      # stops ardopc, starts freedvtnc2
+        ok, msg = mm.switch_to("ardop-hf")   # starts ardopc in HF mode
+        ok, msg = mm.switch_to("ardop-fm")   # starts ardopc in FM mode
         ok, msg = mm.switch_to("tcp")         # stops all modems
         mm.stop_all()                          # clean shutdown
     """
@@ -1399,7 +1480,7 @@ class ModemManager:
         Stop the currently running modem(s) and start the one needed
         for `transport`.  Returns (success: bool, message: str).
 
-        transport values: "tcp", "freedv", "ardop-hf", "ardop-fm"
+        transport values: "tcp", "ardop-hf", "ardop-fm"
         """
         with self._lock:
             config = load_config_env()
@@ -1413,10 +1494,6 @@ class ModemManager:
 
             if not audio_card:
                 return False, "No audio card configured — run setup wizard first"
-
-            if transport == "freedv":
-                return self._start_freedv_locked(
-                    audio_card, serial_port, radio_id, config)
 
             if transport in ("ardop-hf", "ardop-fm"):
                 return self._start_ardop_locked(
@@ -1451,17 +1528,16 @@ class ModemManager:
     # ── Internal helpers (call only while holding self._lock) ─────
 
     def _stop_all_locked(self):
-        """Kill ardopc, stop freedvtnc2 and rigctld services."""
+        """Kill ardopc subprocess and stop rigctld service."""
         self._kill_ardop_locked()
-        for svc in ("freedvtnc2", "rigctld"):
-            try:
-                subprocess.run(
-                    ["systemctl", "stop", svc],
-                    capture_output=True, timeout=10
-                )
-                app.logger.info("ModemManager: %s stopped", svc)
-            except Exception as e:
-                app.logger.warning("ModemManager: stop %s error: %s", svc, e)
+        try:
+            subprocess.run(
+                ["systemctl", "stop", "rigctld"],
+                capture_output=True, timeout=10
+            )
+            app.logger.info("ModemManager: rigctld stopped")
+        except Exception as e:
+            app.logger.warning("ModemManager: stop rigctld error: %s", e)
 
     def _kill_ardop_locked(self):
         """Terminate the ardopc subprocess if running."""
@@ -1517,7 +1593,7 @@ class ModemManager:
                              serial_port: str,
                              radio_id: str) -> tuple:
         """
-        Stop rigctld + freedvtnc2, then launch ardopc.
+        Stop rigctld, then launch ardopc.
 
         PTT strategy (in priority order):
           1. If radio_id is in _CIV_PTT: use ardopcf -c/-k/-u CI-V CAT PTT.
@@ -1525,16 +1601,15 @@ class ModemManager:
           2. If serial_port set but no CI-V entry: use ardopcf -p RTS PTT.
           3. No serial_port: VOX (no PTT flags).
         """
-        # Stop freedvtnc2 AND rigctld — both hold audio/serial resources
-        for svc in ("freedvtnc2", "rigctld"):
-            try:
-                subprocess.run(
-                    ["systemctl", "stop", svc],
-                    capture_output=True, timeout=10
-                )
-                app.logger.info("ModemManager: stopped %s", svc)
-            except Exception as e:
-                app.logger.warning("ModemManager: stop %s error: %s", svc, e)
+        # Stop rigctld — it holds the serial port
+        try:
+            subprocess.run(
+                ["systemctl", "stop", "rigctld"],
+                capture_output=True, timeout=10
+            )
+            app.logger.info("ModemManager: stopped rigctld")
+        except Exception as e:
+            app.logger.warning("ModemManager: stop rigctld error: %s", e)
 
         # Brief pause to let the OS release the serial port
         time.sleep(0.5)
@@ -1710,6 +1785,23 @@ _active_sessions  = set()  # active ConsoleSession instances
 _hub_tcp_server   = None   # boot-time hub TCP server (module-level) for hub TCP dispatch
 _active_sessions  = set()  # active ConsoleSession instances
 
+# ── v0.1.0 Multi-session hub singletons ─────────────────────────────
+# Populated by _start_hub_services() at portal boot.
+# None when MSA modules are unavailable (graceful degradation to v0.0.x behaviour).
+_session_manager = None    # SessionManager — tracks all active spoke sessions
+_hub_core        = None    # HubCore — multi-session protocol handler
+_direwolf        = None    # DirewolfTransport — VHF/HF AX.25 hub-side (multi-session)
+_direwolf_spoke  = None    # DirewolfSpokeTransport — AX.25 spoke-side (single outgoing call)
+_mesh_sync       = None    # MeshSyncManager — hub-to-hub sync
+
+# Lock that serialises all DirewolfTransport creation/replacement.
+# Prevents race between _start_hub_services() and concurrent
+# _attach_direwolf() calls from multiple console hello handlers,
+# which would create multiple AGW clients registered to the same
+# callsign — causing Direwolf to route incoming SABM notifications
+# to the wrong (orphaned) client.
+_direwolf_lock   = threading.Lock()
+
 
 class ConsoleSession:
     """
@@ -1794,91 +1886,159 @@ class ConsoleSession:
     def _switch_modem(self, transport: str):
         """
         Called in a daemon thread when the user clicks a transport button.
-        Stops the current modem and starts the new one, reporting status
-        to the browser via sys_msg.
+
+        Hub:   TCP always runs. ARDOP and AX.25 can additionally be active.
+        Spoke: Transports are mutually exclusive. Selecting one tears down
+               any currently active transport before activating the new one.
         """
         global _active_transport
 
         labels = {
-            "tcp":      "TCP/Internet",
-            "freedv":   "FreeDV HF",
-            "ardop-hf": "ARDOP HF",
-            "ardop-fm": "ARDOP FM",
+            "tcp":       "TCP/Internet",
+            "ardop-hf":  "ARDOP HF",
+            "ardop-fm":  "ARDOP FM",
+            "vhf-ax25":  "VHF AX.25 9600",
+            "hf-ax25":   "HF AX.25 300",
         }
         label = labels.get(transport, transport)
 
-        # Tear down existing transport unless it has an active connection.
-        # If a spoke is currently connected, switching modem would drop them.
-        # In that case skip teardown — the listener is already running.
-        with self._lock:
-            current_t = self.transport
-        current_state = getattr(current_t, "state", 0) if current_t else 0
-        if current_state == 2:
-            # Active connection in progress — don't tear it down
-            app.logger.info("_switch_modem(%s): active connection, "
-                            "skipping teardown", transport)
-            return
-        self._teardown_transport()
-
-        if transport == "tcp":
-            # TCP: stop all modems, then start server listener if hub
-            self.sys_msg("Stopping modems for TCP mode...")
-            _modem_manager.stop_all()
-            # Tear down radio transport but preserve hybrid TCP server
-            self._teardown_transport()
-            global _active_transport
-            _active_transport = "tcp"
+        try:
             settings = load_settings()
-            if settings.get("role") == "hub":
-                if self.hybrid_mode and self._tcp_server is not None:
-                    self.sys_msg("✓ TCP/Internet — Hybrid TCP already running")
-                elif _hub_tcp_server is not None:
-                    # Boot-time server already owns the port — use it
-                    with self._lock:
-                        self.transport = _hub_tcp_server
-                        self._tcp_server = _hub_tcp_server
-                    _hub_tcp_server.on_message_received = self._on_message_received
-                    self.sys_msg("✓ TCP/Internet ready — listening on port 14256")
+            role     = settings.get("role", "")
+
+            # ── Spoke: tear down current transport before switching ────
+            if role != "hub":
+                self._spoke_teardown_current(new_transport=transport)
+
+            # ── AX.25 via Direwolf ────────────────────────────────────
+            if transport in ("vhf-ax25", "hf-ax25"):
+                _active_transport = transport
+                dw_obj = _direwolf if role == "hub" else _direwolf_spoke
+
+                if dw_obj is not None:
+                    # Already attached — just confirm status
+                    self.sys_msg(f"✓ {label} ready — Direwolf managing AX.25 sessions")
+                    if role == "hub":
+                        self.sys_msg("  Listening for incoming spoke connections")
+                    else:
+                        self.sys_msg("  Use /connect <HUBCALL> to call the hub")
                 else:
-                    threading.Thread(
-                        target=self._start_tcp_listener,
-                        daemon=True, name="tcp-listen"
-                    ).start()
+                    # Auto-attach on demand — no portal restart required
+                    self.sys_msg(f"{label} — attaching Direwolf...")
+                    ok, attach_msg = _attach_direwolf()
+                    if ok:
+                        self.sys_msg(f"✓ {label} ready — {attach_msg}")
+                        if role == "hub":
+                            self.sys_msg("  Listening for incoming spoke connections")
+                        else:
+                            self.sys_msg("  Use /connect <HUBCALL> to call the hub")
+                    else:
+                        self.sys_msg(f"✗ {label}: {attach_msg}")
+                        self.sys_msg(
+                            "  Configure Direwolf in Settings → Direwolf, then Apply"
+                        )
+                return
+
+            # ── TCP ───────────────────────────────────────────────────
+            if transport == "tcp":
+                _active_transport = "tcp"
+                _modem_manager.stop_all()
+                if role == "hub":
+                    if _hub_tcp_server is not None:
+                        self.sys_msg("✓ TCP/Internet — multi-client server on port 14256")
+                        self.sys_msg("  Accepting spoke connections on all transports")
+                    else:
+                        threading.Thread(target=self._start_tcp_listener,
+                                         daemon=True, name="tcp-listen").start()
+                else:
+                    self.sys_msg(f"✓ {label} ready — use /connect <IP> [port]")
+                return
+
+            # ── ARDOP HF / ARDOP FM ───────────────────────────────────
+            with self._lock:
+                current_t = self.transport
+            if getattr(current_t, "state", 0) == 2:
+                app.logger.info("_switch_modem(%s): active connection, "
+                                "skipping teardown", transport)
+                return
+            self._teardown_transport()
+
+            self.sys_msg(f"Switching to {label} — stopping other modems...")
+            ok, msg = _modem_manager.switch_to(transport)
+
+            if ok:
+                _active_transport = transport
+                self.sys_msg(f"✓ {msg}")
+                if transport in ("ardop-hf", "ardop-fm"):
+                    fm = (transport == "ardop-fm")
+                    threading.Thread(target=self._start_ardop_listener,
+                                     args=(fm,), daemon=True,
+                                     name="ardop-listen").start()
             else:
-                self.sys_msg(f"✓ {label} ready — use /connect <IP> [port]")
+                self.sys_msg(f"✗ {msg}")
+                self.sys_msg("Transport mode unchanged — fix the issue and retry,")
+                self.sys_msg("or select a different transport.")
+                self.send({"type": "modem_error", "text": msg})
+
+        except Exception as exc:
+            app.logger.error("_switch_modem(%s) unhandled error: %s",
+                             transport, exc, exc_info=True)
+            self.sys_msg(f"✗ Transport switch error: {exc}")
+            self.send({"type": "modem_error", "text": str(exc)})
+
+    def _spoke_teardown_current(self, new_transport: str):
+        """
+        Spoke only: cleanly shut down the current active transport before
+        switching to a different one.  No-op if already on the target transport
+        or if nothing is active.  Fires a 'disconnected' event if an active
+        radio or TCP connection is being dropped.
+        """
+        with self._lock:
+            current_t    = self.transport
+            current_mode = self.transport_mode
+
+        if current_t is None or current_mode == new_transport:
             return
 
-        self.sys_msg(f"Switching to {label} — stopping other modems...")
-        ok, msg = _modem_manager.switch_to(transport)
+        was_connected = (getattr(current_t, "state", 0) == 2)
 
-        if ok:
-            _active_transport = transport   # update only after modem is ready
-            self.sys_msg(f"✓ {msg}")
-            if transport in ("ardop-hf", "ardop-fm"):
-                # Start passive listener so hub accepts incoming calls
-                # without needing /connect first — mirrors FreeDV behaviour
-                fm = (transport == "ardop-fm")
-                threading.Thread(
-                    target=self._start_ardop_listener,
-                    args=(fm,),
-                    daemon=True, name="ardop-listen"
-                ).start()
-            elif transport == "freedv":
-                # Start passive listener so hub accepts incoming connections
-                # without needing /connect first.
-                threading.Thread(
-                    target=self._start_freedv_listener,
-                    daemon=True, name="freedv-listen"
-                ).start()
-                self.sys_msg("Listening for FreeDV connections...")
-                self.sys_msg("Use /connect <CALLSIGN> to call a station")
+        if current_mode in ("ardop-hf", "ardop-fm"):
+            try:
+                current_t.vara_disconnect()
+            except Exception:
+                pass
+            time.sleep(0.3)
+            self._teardown_transport()
+
+        elif current_mode in ("vhf-ax25", "hf-ax25"):
+            # DirewolfSpokeTransport: send DISC frame but keep AGW connection alive
+            # so it can be reused for the next /connect without re-attaching
+            try:
+                current_t.vara_disconnect()
+            except Exception:
+                pass
+            with self._lock:
+                self.transport = None
+
         else:
-            self.sys_msg(f"✗ {msg}")
-            self.sys_msg("Transport mode unchanged — fix the issue and retry,")
-            self.sys_msg("or select a different transport.")
-            # Do NOT revert transport_mode to tcp — if we did, a subsequent
-            # /connect <CALLSIGN> would be misrouted as a TCP hostname.
-            self.send({"type": "modem_error", "text": msg})
+            # TCP client: close the outgoing connection
+            import socket as _socket
+            try:
+                if getattr(current_t, "client_socket", None):
+                    current_t.client_socket.shutdown(_socket.SHUT_RDWR)
+            except Exception:
+                pass
+            try:
+                current_t.close()
+            except Exception:
+                pass
+            with self._lock:
+                self.transport = None
+
+        if was_connected:
+            self.authenticated = False
+            self.send({"type": "disconnected"})
+
 
     # ── Browser helpers ───────────────────────────────────────────
 
@@ -1964,6 +2124,13 @@ class ConsoleSession:
 
             ok = t.connect()   # TCPTransport.connect() calls _start_server()
             if ok:
+                global _hub_tcp_server
+                _hub_tcp_server = t   # expose to _start_hybrid_tcp so it
+                                      # re-uses this server instead of trying
+                                      # to bind port 14256 a second time.
+                                      # This path runs when role was not hub
+                                      # at boot time (boot server skipped),
+                                      # so _hub_tcp_server was never set there.
                 app.logger.info("TCP listener active on port %d", port)
                 self.sys_msg(f"✓ TCP/Internet ready — listening on port {port}")
                 self.sys_msg("Spokes can connect using /connect <this-IP>")
@@ -2004,6 +2171,127 @@ class ConsoleSession:
 
         except Exception as e:
             self.send({"type": "error", "text": f"Connect error: {e}"})
+            self.send({"type": "disconnected"})
+
+    def _connect_ax25(self, target_call: str, radio_port: int):
+        """
+        Initiate an outgoing AX.25 call via DirewolfSpokeTransport.
+        Runs in a daemon thread.  Only valid for spoke stations.
+
+        Lifecycle:
+          1.  Attach DirewolfSpokeTransport if not yet connected to AGW.
+          2.  Send AGW 'C' frame → Direwolf keys PTT and transmits SABM.
+          3.  Wait for Direwolf to send back:
+              'C' → connection established (STATE_CONNECTED → "connected" event)
+              'd' → connection failed / timeout  (STATE_DISCONNECTED → "disconnected")
+          4.  Watchdog fires after AX25_CONNECT_TIMEOUT seconds if neither
+              'C' nor 'd' arrives (e.g. PTT wiring issue, reader thread died).
+        """
+        # At 9600 baud: FRACK=3s × RETRY=10 = 30s worst case.
+        # Add 30s margin to cover slow hardware and roundtrip ACK delays.
+        AX25_CONNECT_TIMEOUT = 90   # seconds
+
+        global _direwolf_spoke
+        try:
+            settings = load_settings()
+            if settings.get("role") == "hub":
+                self.sys_msg("✗ Hub stations do not initiate outgoing AX.25 calls")
+                self.send({"type": "disconnected"})
+                return
+
+            # Attach on demand if not yet connected to Direwolf AGW
+            if _direwolf_spoke is None:
+                self.sys_msg("Attaching Direwolf AX.25...")
+                ok, msg = _attach_direwolf()
+                if not ok or _direwolf_spoke is None:
+                    self.sys_msg(f"✗ Direwolf not available: {msg}")
+                    self.send({"type": "disconnected"})
+                    return
+
+            # Verify the AGW socket is still alive before sending
+            if not getattr(_direwolf_spoke, "_running", False):
+                self.sys_msg("✗ Direwolf AGW connection dropped — reattaching...")
+                ok, msg = _attach_direwolf()
+                if not ok or _direwolf_spoke is None:
+                    self.sys_msg(f"✗ Could not reconnect to Direwolf: {msg}")
+                    self.send({"type": "disconnected"})
+                    return
+
+            # Wire callbacks to this ConsoleSession — state changes and received
+            # data will route to our existing _on_state_change / _on_message_received
+            _direwolf_spoke.on_state_change     = self._on_state_change
+            _direwolf_spoke.on_message_received = self._on_message_received
+
+            with self._lock:
+                self.transport = _direwolf_spoke
+
+            # Send AGW 'C' frame to Direwolf — it will transmit AX.25 SABM on air
+            if not _direwolf_spoke.connect_to(target_call, radio_port):
+                self.sys_msg(f"✗ Could not send connect request to Direwolf "
+                             f"(AGW socket closed?)")
+                self.sys_msg("  Check: journalctl -u direwolf -n 20")
+                self.send({"type": "disconnected"})
+                with self._lock:
+                    self.transport = None
+                return
+
+            # Frame sent — Direwolf will now key PTT and transmit SABM
+            port_label = "HF" if self.transport_mode == "hf-ax25" else "VHF"
+            self.sys_msg(f"  AX.25 SABM sent via Direwolf ({port_label})")
+            self.sys_msg(f"  Waiting up to {AX25_CONNECT_TIMEOUT}s for {target_call} to answer...")
+
+            # ── Watchdog ──────────────────────────────────────────────
+            # Fires if neither 'C' (connected) nor 'd' (failed) arrives from
+            # Direwolf within the timeout.  Protects against:
+            #  - PTT wiring failure (radio never keys; Direwolf never gets UA)
+            #  - Direwolf AGW reader thread dying silently
+            session_ref = self
+            start_time  = time.time()
+            target_ref  = target_call
+
+            def _watchdog():
+                while time.time() - start_time < AX25_CONNECT_TIMEOUT:
+                    time.sleep(2)
+                    with session_ref._lock:
+                        t = session_ref.transport
+                    current_state = getattr(t, "state", -1) if t else -1
+                    # Left CONNECTING (1) → connected or disconnected — stop watching
+                    if current_state != 1:
+                        return
+
+                # Still in CONNECTING after timeout — force disconnect
+                app.logger.warning("_connect_ax25 watchdog: timeout for %s",
+                                   target_ref)
+                with session_ref._lock:
+                    t = session_ref.transport
+                if getattr(t, "state", 0) == 1:
+                    # Tell Direwolf to abort the pending connection
+                    try:
+                        t.vara_disconnect()
+                    except Exception:
+                        pass
+                    with session_ref._lock:
+                        session_ref.transport = None
+                    session_ref.authenticated = False
+                    session_ref.sys_msg(
+                        f"✗ AX.25 connection to {target_ref} timed out "
+                        f"({AX25_CONNECT_TIMEOUT}s — no response from remote station)"
+                    )
+                    session_ref.sys_msg(
+                        "  Possible causes: hub not listening, PTT not keying radio, "
+                        "wrong frequency or callsign"
+                    )
+                    session_ref.sys_msg(
+                        "  Diagnostics: journalctl -u direwolf -n 20"
+                    )
+                    session_ref.send({"type": "disconnected"})
+
+            threading.Thread(target=_watchdog, daemon=True,
+                             name="ax25-watchdog").start()
+
+        except Exception as exc:
+            app.logger.error("_connect_ax25 error: %s", exc, exc_info=True)
+            self.send({"type": "error", "text": f"AX.25 connect error: {exc}"})
             self.send({"type": "disconnected"})
 
     def _start_ardop_listener(self, fm_mode: bool = False):
@@ -2108,8 +2396,15 @@ class ConsoleSession:
             # connect() already sent LISTEN TRUE — ardopc is now accepting calls
             label = "ARDOP FM" if fm_mode else "ARDOP HF"
             app.logger.info("ARDOP listener active (%s)", label)
-            self.sys_msg(f"Listening for {label} connections...")
-            self.sys_msg("Use /connect <CALLSIGN> to call a station")
+            # Messages are role-specific:
+            #   Hub  — passive listener, waits for spokes to call in
+            #   Spoke — active caller, uses /connect to reach the hub
+            settings = load_settings()
+            if settings.get("role") == "hub":
+                self.sys_msg(f"✓ {label} ready — listening for incoming spoke connections")
+                self.sys_msg("  Use /connect <CALLSIGN> to call a spoke station")
+            else:
+                self.sys_msg(f"✓ {label} ready — use /connect <CALLSIGN> to call hub")
 
         except Exception as e:
             app.logger.error("_start_ardop_listener error: %s", e)
@@ -2555,8 +2850,28 @@ class ConsoleSession:
             except Exception as e:
                 app.logger.error("PASSWD_RSP parse error: %s", e)
 
+        elif msg_type == _HUB_TYPE_CONN_ACK:
+            # Hub confirmed the AX.25/radio connection is bidirectional.
+            # JSON: {"hub": str, "call": str, "msg": str}
+            # Show the hub's message and prompt for /auth.
+            try:
+                import json as _json
+                obj      = _json.loads(payload.decode())
+                hub_call = obj.get("hub", "HUB")
+                hub_msg  = obj.get("msg", "Connected")
+                app.logger.info("Console RX CONN_ACK from %s", hub_call)
+                self.sys_msg(f"✓ {hub_call}: {hub_msg}")
+                # Confirm connected state to browser and signal it to show auth prompt
+                self.send({
+                    "type":        "connected",
+                    "remote_call": hub_call,
+                    "conn_ack":    True,
+                })
+            except Exception as exc:
+                app.logger.warning("CONN_ACK parse error: %s", exc)
+                self.sys_msg("✓ Hub confirmed — use /auth <password>")
+
         elif msg_type == _HUB_TYPE_AUTH_RSP:
-            # JSON: {"success": bool, "message": str}
             try:
                 import json as _json
                 obj = _json.loads(payload.decode())
@@ -3068,14 +3383,19 @@ class ConsoleSession:
                 app.logger.info("Console RX store_ack parse error: %s", e)
 
         elif msg_type == _HUB_TYPE_ERROR:
-            # JSON: {"filename": str, "error": str}
+            # JSON: {"error": str} or {"filename": str, "error": str}
+            # Hub sends this plaintext (encrypt=False) so the spoke can read it
+            # even when there is a key mismatch — the error text diagnoses the problem.
             try:
                 import json as _json
                 obj = _json.loads(payload.decode())
-                self.send({"type": "error",
-                           "text": f"File error: {obj.get('error', '?')}"})
-            except Exception as e:
-                app.logger.info("Console RX error parse error: %s", e)
+                err = obj.get("error", "Unknown hub error")
+                self.sys_msg(f"✗ Hub error: {err}")
+                # Broadcast to browser so it's visible in the console
+                self.send({"type": "error", "text": err})
+            except Exception as exc:
+                app.logger.info("Console RX error frame parse error: %s", exc)
+                self.sys_msg(f"✗ Hub sent an error frame (unreadable: {exc})")
 
         else:
             app.logger.info("Console RX: unhandled type 0x%02x", msg_type)
@@ -3244,10 +3564,11 @@ class ConsoleSession:
                 active_type = type(t).__name__ if t is not None else None
                 # Map transport name to expected type
                 type_map = {
-                    "tcp":      "TCPTransport",
-                    "freedv":   "FreeDVTransport",
-                    "ardop-fm": "ARDOPConnection",
-                    "ardop-hf": "ARDOPConnection",
+                    "tcp":       "TCPServerTransport",
+                    "ardop-fm":  "ARDOPConnection",
+                    "ardop-hf":  "ARDOPConnection",
+                    "vhf-ax25":  None,   # managed by _direwolf singleton, no per-session transport
+                    "hf-ax25":   None,
                 }
                 expected_type = type_map.get(transport)
                 already_correct = (active_type is not None and
@@ -3276,26 +3597,33 @@ class ConsoleSession:
             ).start()
 
         elif mtype == "set_hybrid":
-            enabled  = bool(msg.get("enabled", False))
+            # Hybrid mode is retired — TCP is always on for hubs.
+            # This handler is kept for backward compatibility with any
+            # cached browser state; it is a no-op.
+            app.logger.info("set_hybrid received (deprecated — TCP always on)")
+            self.sys_msg("ℹ TCP server is always active on hub stations")
+
+        elif mtype == "tcp_enabled":
+            # New: spoke-side toggle to enable/disable TCP outgoing connections.
+            # Hub side: TCP server is always running; this is a no-op.
+            enabled = bool(msg.get("enabled", True))
             settings = load_settings()
-            if settings.get("role") != "hub":
-                self.sys_msg("⚠ Hybrid mode is a Hub function")
-                return
-            self.hybrid_mode = enabled
-            if enabled:
-                if self._tcp_server is not None:
-                    self.sys_msg("✓ Hybrid TCP already running on port 14256")
-                else:
-                    threading.Thread(target=self._start_hybrid_tcp,
-                                     daemon=True, name="hybrid-tcp").start()
+            if settings.get("role") == "hub":
+                self.sys_msg("ℹ TCP server always running on hub (port 14256)")
             else:
-                if self._tcp_server is not None:
-                    try:
-                        self._tcp_server.close()
-                    except Exception:
-                        pass
-                    self._tcp_server = None
-                    self.sys_msg("Hybrid TCP server stopped")
+                if not enabled:
+                    # Spoke disconnects TCP if currently connected via TCP
+                    with self._lock:
+                        t = self.transport
+                    if t and self.transport_mode == "tcp":
+                        try:
+                            t.close()
+                        except Exception:
+                            pass
+                        with self._lock:
+                            self.transport = None
+                        self.send({"type": "disconnected"})
+                        self.sys_msg("TCP disabled — use a radio transport to connect")
 
         elif mtype == "set_encrypt":
             self.enc_enabled = bool(msg.get("enabled", True))
@@ -3311,14 +3639,23 @@ class ConsoleSession:
                 fm = (tmode == "ardop-fm")
                 threading.Thread(target=self._connect_ardop,
                                  args=(target, fm), daemon=True).start()
-            elif tmode == "freedv":
+            elif tmode in ("vhf-ax25", "hf-ax25"):
                 target = msg.get("target_call", "").strip().upper()
                 if not target:
-                    self.sys_msg("\u2717 Usage: /connect <CALLSIGN>  (FreeDV mode)")
+                    self.sys_msg("\u2717 Usage: /connect <CALLSIGN>  (AX.25 mode)")
                     return
+                from hf256.direwolf_transport import RADIO_PORT_VHF, RADIO_PORT_HF
+                if tmode == "vhf-ax25":
+                    radio_port = RADIO_PORT_VHF
+                else:
+                    # HF is on channel 1 when VHF is also configured,
+                    # or channel 0 when HF is the only active radio port.
+                    settings  = load_settings()
+                    vhf_card  = settings.get("direwolf_vhf_card")
+                    radio_port = RADIO_PORT_HF if vhf_card is not None else RADIO_PORT_VHF
                 self.send({"type": "connecting"})
-                threading.Thread(target=self._connect_freedv,
-                                 args=(target,), daemon=True).start()
+                threading.Thread(target=self._connect_ax25,
+                                 args=(target, radio_port), daemon=True).start()
             else:
                 host = msg.get("host", "127.0.0.1")
                 port = int(msg.get("port", 14256))
@@ -3337,12 +3674,15 @@ class ConsoleSession:
                             pass
                         import time as _time
                         _time.sleep(0.3)
-                    elif self.transport_mode == "freedv":
-                        # FreeDV: send DISC packet (vara_disconnect does this)
+                    elif self.transport_mode in ("vhf-ax25", "hf-ax25"):
+                        # AX.25: send DISC frame via DirewolfSpokeTransport
                         try:
                             self.transport.vara_disconnect()
                         except Exception:
                             pass
+                        # Don't null out _direwolf_spoke itself — just detach
+                        # from this session so it can be reused for the next call
+                        self.transport = None
                     else:
                         # TCP: shutdown() sends FIN immediately
                         import socket as _socket
@@ -3352,28 +3692,40 @@ class ConsoleSession:
                                     _socket.SHUT_RDWR)
                         except Exception:
                             pass
-                    self.transport.close()
-                    self.transport = None
+                        self.transport.close()
+                        self.transport = None
             self.send({"type": "disconnected"})
 
         elif mtype == "chat":
             text = msg.get("text", "").strip()
             if text:
                 # Show immediately as local echo — don't wait for hub ARQ queue
-                self.send({"type": "chat", "sender": self.mycall, "text": text})
+                self.send({"type": "chat", "sender": self.mycall,
+                           "text": text, "local": True})
                 # Send in background thread so we can report ACK receipt
                 def _send_chat(t=text):
                     ok = self._send_hub(
                         _HUB_TYPE_CHAT, _chat_payload(self.mycall, t)
                     )
                     with self._lock:
+                        tport = self.transport
+                    tmode = getattr(tport, '__class__', type(None)).__name__
+                    is_radio = "Direwolf" in tmode or "Spoke" in tmode
+                    with self._lock:
                         remote = (getattr(self.transport, "remote_call", None)
                                   if self.transport else None)
                     dest = remote if remote else "hub"
                     if ok:
-                        self.sys_msg(f"✓ Message delivered to {dest}")
+                        if is_radio:
+                            # For radio: AX.25 ACK confirms frame reached hub's
+                            # data link layer. Application-level confirmation
+                            # arrives as the hub echo — console.html shows that
+                            # echo as "✓ Hub received: ..." when it arrives.
+                            self.sys_msg(f"↗ Transmitting to {dest}...")
+                        else:
+                            self.sys_msg(f"✓ Message delivered to {dest}")
                     else:
-                        self.sys_msg(f"✗ Message delivery failed — {dest} did not ACK")
+                        self.sys_msg(f"✗ Send failed — not connected")
                 threading.Thread(target=_send_chat, daemon=True,
                                  name="chat-send").start()
 
@@ -3545,74 +3897,21 @@ class ConsoleSession:
             self._dl_cancel = True
             self.sys_msg("Download cancelled")
 
-        elif mtype == "announce":
-            text = msg.get("text", "").strip()
-            if not text:
-                self.sys_msg("\u2717 Usage: /announce <message>")
-            elif self.transport_mode != "freedv":
-                self.sys_msg("\u2717 /announce is only available in FreeDV mode")
-            else:
-                # Try the active transport first (if connected)
-                with self._lock:
-                    t = self.transport
-                if t and hasattr(t, "send_announce"):
-                    ok = t.send_announce(f"{self.mycall}: {text}")
-                else:
-                    # No active session — send directly via KISS to port 8001.
-                    # Announce does not require a P2P connection.
-                    ok = self._announce_direct(f"{self.mycall}: {text}")
-                if ok:
-                    self.sys_msg("\u2713 Announce sent: " + text)
-                else:
-                    self.sys_msg("\u2717 Announce failed — is FreeDV modem running?")
-
-        elif mtype == "set_freedv_mode":
-            # Change freedvtnc2 operating mode on the fly via port 8002
-            mode = msg.get("mode", "DATAC1").upper()
-            valid = ("DATAC0", "DATAC1", "DATAC3", "DATAC4")
-            if mode not in valid:
-                self.sys_msg("\u2717 Invalid FreeDV mode: " + mode)
-            else:
-                ok, resp = freedvtnc2_command(f"MODE {mode}")
-                if ok:
-                    self.sys_msg("\u2713 FreeDV mode set to " + mode)
-                    # Persist the mode change to config.env so next restart
-                    # uses the same mode
-                    try:
-                        cfg_path = str(CONFIG_ENV)
-                        with open(cfg_path) as f_:
-                            lines = f_.readlines()
-                        with open(cfg_path, "w") as f_:
-                            for ln in lines:
-                                if ln.startswith("FREEDV_MODE="):
-                                    f_.write(f"FREEDV_MODE={mode}\n")
-                                else:
-                                    f_.write(ln)
-                    except Exception as e_:
-                        app.logger.warning("set_freedv_mode: config.env update failed: %s", e_)
-                else:
-                    self.sys_msg("\u2717 Mode change failed: " + resp)
-
         elif mtype == "modem_status":
             # Report current modem state to console
-            ardop_up   = _modem_manager.ardop_running()
+            ardop_up = _modem_manager.ardop_running()
             import subprocess as _sp
-            r = _sp.run(["systemctl", "is-active", "freedvtnc2"],
-                        capture_output=True, text=True)
-            fdv_up = r.stdout.strip() == "active"
             r2 = _sp.run(["systemctl", "is-active", "rigctld"],
                          capture_output=True, text=True)
             rig_up = r2.stdout.strip() == "active"
             OK_  = "\u2713 running"
             OFF_ = "\u25cb stopped"
             self.sys_msg("Modem status:")
-            self.sys_msg("  freedvtnc2 : " + (OK_ if fdv_up   else OFF_))
             self.sys_msg("  ardopc     : " + (OK_ if ardop_up else OFF_))
             self.sys_msg("  rigctld    : " + (OK_ if rig_up   else OFF_))
             config = load_config_env()
             self.sys_msg(f"  audio card : {config.get('AUDIO_CARD', '?')}")
             self.sys_msg(f"  serial port: {config.get('SERIAL_PORT', 'none')}")
-            self.sys_msg(f"  FreeDV mode: {config.get('FREEDV_MODE', 'DATAC1')}")
 
         elif mtype == "passwd":
             current_pw = msg.get("current", "")
@@ -3771,6 +4070,67 @@ class ConsoleSession:
                 # Spoke: send as chat command to hub for relay
                 self._send_hub(_HUB_TYPE_CHAT, _chat_payload(self.mycall, "/storage"))
 
+        # ── v0.1.0 multi-session hub commands ──────────────────────────
+
+        elif mtype == "hub_broadcast":
+            # Hub operator broadcasts to all connected authenticated spokes
+            text = msg.get("text", "").strip()
+            if not text:
+                return
+            if _hub_core is not None:
+                _hub_core.broadcast(text, from_call=self.mycall)
+                n = _session_manager.count() if _session_manager else 0
+                self.sys_msg(f"✓ Broadcast sent to {n} session(s)")
+            else:
+                # Fallback: store as bulletin when MSA not available
+                self.dispatch({"type": "bulletin", "text": text})
+
+        elif mtype == "hub_sessions":
+            # Return live session list to browser console
+            if _session_manager is not None:
+                sessions = _session_manager.status_list()
+            else:
+                sessions = []
+            self.send({"type": "session_list", "sessions": sessions})
+
+        elif mtype == "direwolf":
+            # Browser clicked VHF AX.25 or HF AX.25 transport button
+            transport_label = msg.get("label", "AX.25")
+            if _direwolf is not None:
+                self.sys_msg(f"✓ {transport_label} transport active via Direwolf")
+                self.sys_msg("  Listening for incoming AX.25 connections")
+            else:
+                from hf256.direwolf_config import direwolf_running
+                if direwolf_running():
+                    self.sys_msg(
+                        f"✗ {transport_label} transport: Direwolf is running but "
+                        "not connected — restart portal to re-attach"
+                    )
+                else:
+                    self.sys_msg(
+                        f"✗ {transport_label} transport: Direwolf is not running"
+                    )
+                    self.sys_msg(
+                        "  Configure via Settings → Direwolf then restart portal"
+                    )
+
+        elif mtype == "mesh_sync":
+            # Hub operator triggers immediate sync with a peer
+            peer = msg.get("peer", "").strip()
+            if not peer:
+                self.sys_msg("✗ Usage: /mesh_sync <peer-ip>")
+                return
+            if _mesh_sync is not None:
+                self.sys_msg(f"Mesh sync started with {peer}...")
+                threading.Thread(
+                    target=_mesh_sync.sync_now,
+                    args=(peer,),
+                    daemon=True,
+                    name="mesh-sync-manual",
+                ).start()
+            else:
+                self.sys_msg("✗ Mesh sync not running — add peers in Settings")
+
         else:
             app.logger.warning("Console: unknown msg type: %s", mtype)
 
@@ -3862,24 +4222,583 @@ def console_ws(ws):
 # ------------------------------------------------------------------ #
 
 # ------------------------------------------------------------------ #
-# Hub TCP server — starts at portal boot, no browser session needed
+# v0.1.0 Multi-session hub REST API endpoints
 # ------------------------------------------------------------------ #
 
-def _start_hub_tcp_server():
+@app.route("/api/hub/sessions")
+def api_hub_sessions():
+    """Return all active spoke sessions for the status dashboard."""
+    if _session_manager is None:
+        return jsonify({"sessions": [], "total": 0})
+    return jsonify({
+        "sessions": _session_manager.status_list(),
+        "total":    _session_manager.count(),
+    })
+
+
+@app.route("/api/hub/broadcast", methods=["POST"])
+def api_hub_broadcast():
+    """Hub operator broadcasts a message to all authenticated spokes."""
+    if _hub_core is None:
+        return jsonify({"ok": False, "error": "Hub not running"}), 503
+    data = request.get_json(force=True) or {}
+    text = data.get("text", "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "Empty message"}), 400
+    _hub_core.broadcast(text)
+    app.logger.info("Hub broadcast: %s", text[:80])
+    return jsonify({"ok": True})
+
+
+@app.route("/api/hub/send", methods=["POST"])
+def api_hub_send():
+    """Hub operator sends a direct message to one spoke callsign."""
+    if _hub_core is None:
+        return jsonify({"ok": False, "error": "Hub not running"}), 503
+    data     = request.get_json(force=True) or {}
+    callsign = data.get("callsign", "").upper().strip()
+    text     = data.get("text", "").strip()
+    if not callsign or not text:
+        return jsonify({"ok": False, "error": "Missing callsign or text"}), 400
+    ok = _hub_core.send_to(callsign, text)
+    return jsonify({"ok": ok})
+
+
+@app.route("/api/hub/disconnect", methods=["POST"])
+def api_hub_disconnect_session():
+    """Hub operator force-disconnects a session by ID."""
+    if _session_manager is None:
+        return jsonify({"ok": False, "error": "Hub not running"}), 503
+    data       = request.get_json(force=True) or {}
+    session_id = data.get("session_id", "").strip()
+    if not session_id:
+        return jsonify({"ok": False, "error": "Missing session_id"}), 400
+    session = _session_manager.get(session_id)
+    if session is None:
+        return jsonify({"ok": False, "error": "Session not found"}), 404
+    _session_manager.close_session(session_id)
+    app.logger.info("Hub: force-disconnected session %s", session_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/direwolf/set-levels", methods=["POST"])
+def api_direwolf_set_levels():
     """
-    Start a persistent TCP server on port 14256 for hub stations.
-    Called once at portal startup in a daemon thread.
-    Incoming spoke connections are routed through any active ConsoleSession.
+    Set ALSA capture (RX) and playback (TX) levels for the configured
+    Direwolf audio cards.
+
+    Body JSON: {"rx_pct": int, "tx_pct": int}
+    Defaults: rx_pct=40, tx_pct=70
+
+    Direwolf recommends audio level ~50 on its meter.
+    DigiRig typically needs rx_pct 20-30% to reach that (depends on radio AF out).
+
+    Levels are persisted via 'alsactl store' so they survive reboots.
+    alsa-restore.service (part of alsa-utils, installed by default on Pi OS)
+    runs 'alsactl restore' at boot to reload them automatically.
+    """
+    data    = request.get_json(force=True) or {}
+    rx_pct  = int(data.get("rx_pct", 40))
+    tx_pct  = int(data.get("tx_pct", 70))
+    rx_pct  = max(10, min(rx_pct, 100))
+    tx_pct  = max(10, min(tx_pct, 100))
+
+    settings = load_settings()
+    vhf_card = settings.get("direwolf_vhf_card")
+    hf_card  = settings.get("direwolf_hf_card")
+
+    results = []
+    errors  = []
+
+    for label, card in [("VHF", vhf_card), ("HF", hf_card)]:
+        if card is None:
+            continue
+        try:
+            r = set_audio_levels(int(card), speaker_pct=tx_pct, mic_pct=rx_pct)
+            results.append(f"{label} card {card}: {'; '.join(r.get('results', []))}")
+        except Exception as exc:
+            errors.append(f"{label} card {card}: {exc}")
+            app.logger.error("set-levels %s card %s: %s", label, card, exc)
+
+    if errors and not results:
+        return jsonify({"ok": False, "error": "; ".join(errors)})
+
+    # Persist levels to ALSA state file — alsa-restore.service loads this at boot
+    try:
+        subprocess.run(["alsactl", "store"], timeout=5, capture_output=True)
+        app.logger.info("api_direwolf_set_levels: alsactl store complete")
+    except Exception as exc:
+        app.logger.warning("api_direwolf_set_levels: alsactl store failed: %s", exc)
+        errors.append(f"alsactl store failed: {exc}")
+
+    # Save rx/tx percentages to settings.json so Settings page can reload them
+    # and _attach_direwolf can re-apply them automatically after any restart
+    settings["direwolf_rx_pct"] = rx_pct
+    settings["direwolf_tx_pct"] = tx_pct
+    save_settings(settings)
+    app.logger.info("api_direwolf_set_levels: saved rx=%d%% tx=%d%% to settings",
+                    rx_pct, tx_pct)
+
+    return jsonify({"ok": True, "results": results, "errors": errors})
+
+
+@app.route("/api/direwolf/status")
+def api_direwolf_status():
+    """Return Direwolf service status and connection state."""
+    try:
+        from hf256.direwolf_config import direwolf_running
+        running   = direwolf_running()
+    except ImportError:
+        running   = False
+    connected = (_direwolf is not None or _direwolf_spoke is not None)
+    return jsonify({"running": running, "connected": connected})
+
+
+@app.route("/api/direwolf/conf")
+def api_direwolf_conf():
+    """Return the current content of /etc/direwolf/direwolf.conf for diagnostics."""
+    try:
+        from hf256.direwolf_config import get_direwolf_conf
+        content = get_direwolf_conf()
+    except ImportError:
+        content = "# direwolf_config module not available"
+    return jsonify({"content": content})
+
+
+@app.route("/api/direwolf/logs")
+def api_direwolf_logs():
+    """Return recent Direwolf journal entries for diagnostics."""
+    lines = int(request.args.get("lines", 50))
+    lines = max(10, min(lines, 200))   # clamp 10–200
+    try:
+        from hf256.direwolf_config import get_direwolf_log
+        content = get_direwolf_log(lines)
+    except ImportError:
+        content = "direwolf_config module not available"
+    return jsonify({"content": content, "lines": lines})
+
+
+@app.route("/api/direwolf/setup", methods=["POST"])
+def api_direwolf_setup():
+    """
+    Configure and (re)start Direwolf from posted settings.
+    Keys: direwolf_vhf_card, direwolf_vhf_serial, direwolf_vhf_ptt,
+          direwolf_vhf_baud, direwolf_hf_card, direwolf_hf_serial, direwolf_hf_ptt
+    """
+    try:
+        from hf256.direwolf_config import setup_direwolf_from_settings
+    except ImportError:
+        return jsonify({"ok": False,
+                        "message": "direwolf_config module not found"}), 503
+    data     = request.get_json(force=True) or {}
+    settings = load_settings()
+    settings.update(data)
+    ok, msg = setup_direwolf_from_settings(settings)
+    if ok:
+        # Persist the new Direwolf keys to settings.json
+        for key in ("direwolf_vhf_card", "direwolf_vhf_serial",
+                    "direwolf_vhf_ptt",  "direwolf_vhf_baud",
+                    "direwolf_hf_card",  "direwolf_hf_serial",
+                    "direwolf_hf_ptt",   "direwolf_hf_alsa_device",
+                    "direwolf_hf_hamlib_model"):
+            if key in data:
+                settings[key] = data[key]
+        save_settings(settings)
+
+        # Attach DirewolfTransport / DirewolfSpokeTransport without portal restart.
+        # Run in a daemon thread so the HTTP response returns immediately.
+        def _attach_bg():
+            ok2, msg2 = _attach_direwolf()
+            if ok2:
+                app.logger.info("api_direwolf_setup: Direwolf attached — %s", msg2)
+            else:
+                app.logger.warning("api_direwolf_setup: attach failed — %s", msg2)
+        threading.Thread(target=_attach_bg, daemon=True,
+                         name="direwolf-attach").start()
+
+    return jsonify({"ok": ok, "message": msg})
+
+
+@app.route("/api/mesh/peers", methods=["GET"])
+def api_mesh_peers_get():
+    """Return the configured mesh peer list."""
+    settings = load_settings()
+    return jsonify({"peers": settings.get("mesh_peers", [])})
+
+
+@app.route("/api/mesh/peers", methods=["POST"])
+def api_mesh_peers_post():
+    """Add or remove a mesh peer hub address."""
+    data   = request.get_json(force=True) or {}
+    action = data.get("action", "add")
+    addr   = data.get("address", "").strip()
+    if not addr:
+        return jsonify({"ok": False, "error": "Missing address"}), 400
+
+    settings = load_settings()
+    peers    = settings.get("mesh_peers", [])
+
+    if action == "add" and addr not in peers:
+        peers.append(addr)
+        if _mesh_sync:
+            _mesh_sync.add_peer(addr)
+    elif action == "remove" and addr in peers:
+        peers.remove(addr)
+        if _mesh_sync:
+            _mesh_sync.remove_peer(addr)
+
+    settings["mesh_peers"] = peers
+    save_settings(settings)
+    return jsonify({"ok": True, "peers": peers})
+
+
+@app.route("/api/mesh/sync-now", methods=["POST"])
+def api_mesh_sync_now():
+    """Trigger an immediate mesh sync with a specific peer."""
+    if _mesh_sync is None:
+        return jsonify({"ok": False, "error": "Mesh sync not running"}), 503
+    data = request.get_json(force=True) or {}
+    addr = data.get("address", "").strip()
+    if not addr:
+        return jsonify({"ok": False, "error": "Missing address"}), 400
+    threading.Thread(
+        target=_mesh_sync.sync_now, args=(addr,),
+        daemon=True, name="mesh-sync-api",
+    ).start()
+    return jsonify({"ok": True, "message": f"Sync started with {addr}"})
+
+
+# ------------------------------------------------------------------ #
+# Hub services — starts at portal boot, no browser session needed
+# Replaces the old single-client _start_hub_tcp_server().
+# ------------------------------------------------------------------ #
+
+def _apply_stored_audio_levels(settings: dict) -> None:
+    """
+    Apply the stored rx/tx audio levels from settings.json to ALSA.
+
+    Called automatically after Direwolf attaches so the operator-configured
+    levels are always in effect — even after a reboot or Direwolf restart.
+    Levels are saved to settings.json by api_direwolf_set_levels() and are
+    also persisted via 'alsactl store' for the alsa-restore.service mechanism.
+    This function is a belt-and-suspenders fallback in case alsactl restore
+    hasn't run yet when the portal starts.
+    """
+    rx_pct  = settings.get("direwolf_rx_pct")
+    tx_pct  = settings.get("direwolf_tx_pct")
+    if rx_pct is None and tx_pct is None:
+        return   # operator has not configured levels — leave ALSA defaults alone
+    rx_pct = int(rx_pct or 40)
+    tx_pct = int(tx_pct or 70)
+    vhf_card = settings.get("direwolf_vhf_card")
+    hf_card  = settings.get("direwolf_hf_card")
+    for label, card in [("VHF", vhf_card), ("HF", hf_card)]:
+        if card is None:
+            continue
+        try:
+            r = set_audio_levels(int(card), speaker_pct=tx_pct, mic_pct=rx_pct)
+            app.logger.info(
+                "_apply_stored_audio_levels: %s card %d rx=%d%% tx=%d%% → %s",
+                label, card, rx_pct, tx_pct, r.get("results", []),
+            )
+        except Exception as exc:
+            app.logger.warning(
+                "_apply_stored_audio_levels: %s card %d error: %s", label, card, exc
+            )
+
+
+def _attach_direwolf() -> tuple:
+    """
+    Connect DirewolfTransport (hub) or DirewolfSpokeTransport (spoke) to the
+    Direwolf AGW interface on port 8000.
+
+    Safe to call at any time — idempotent on repeated calls.
+    Called automatically by api_direwolf_setup after a successful Apply,
+    and on-demand from _switch_modem when the operator selects AX.25.
+
+    Returns (success: bool, message: str).
+    """
+    global _direwolf, _direwolf_spoke
+
+    settings = load_settings()
+    role     = settings.get("role", "")
+    callsign = settings.get("callsign", "N0CALL").upper()
+    vhf_card = settings.get("direwolf_vhf_card")
+    hf_card  = settings.get("direwolf_hf_card")
+
+    if vhf_card is None and hf_card is None:
+        return False, "No Direwolf channels configured in Settings"
+
+    try:
+        from hf256.direwolf_config import direwolf_running
+        if not direwolf_running():
+            return False, "Direwolf service is not running"
+    except ImportError:
+        return False, "direwolf_config module not available"
+
+    try:
+        from hf256.direwolf_transport import DirewolfTransport, DirewolfSpokeTransport
+    except ImportError:
+        return False, "direwolf_transport module not available"
+
+    if role == "hub":
+        # Serialise hub DirewolfTransport creation — prevents concurrent
+        # calls from creating multiple AGW clients for the same callsign.
+        with _direwolf_lock:
+            if _session_manager is None or _hub_core is None:
+                return False, ("Hub core not initialised — "
+                               "portal may still be starting up")
+            # If already connected and healthy, skip re-creation.
+            # _attach_direwolf is called from both _start_hub_services() at
+            # boot and from the console auto-attach on WS open. Without this
+            # guard, the second call tears down the healthy transport and
+            # creates a new AGW client — causing Direwolf to log three AGW
+            # client connections and a brief gap in AX.25 listening.
+            if _direwolf is not None:
+                try:
+                    if _direwolf._sock is not None:
+                        app.logger.debug(
+                            "_attach_direwolf: hub already attached, skipping")
+                        return True, "Direwolf AX.25 already attached (hub)"
+                except Exception:
+                    pass
+                # Socket is dead — stop cleanly before re-creating
+                try:
+                    _direwolf.stop()
+                except Exception:
+                    pass
+            dw = DirewolfTransport(
+                mycall               = callsign,
+                session_manager      = _session_manager,
+                on_client_message    = _hub_core.on_message,
+                on_client_connect    = _hub_core.on_connect,
+                on_client_disconnect = _hub_core.on_disconnect,
+                vhf_enabled = (vhf_card is not None),
+                hf_enabled  = (hf_card  is not None),
+            )
+            if dw.start():
+                _direwolf = dw
+                app.logger.info("_attach_direwolf: hub DirewolfTransport attached")
+                # Re-apply stored audio levels — ensures correct RX/TX gain
+                # is in effect after every Direwolf start, not just after
+                # the operator manually sets levels via the Settings page.
+                threading.Thread(
+                    target=_apply_stored_audio_levels,
+                    args=(load_settings(),),
+                    daemon=True, name="alsa-levels",
+                ).start()
+                return True, "Direwolf AX.25 attached (hub)"
+            return False, "DirewolfTransport: could not connect to Direwolf AGW port 8000"
+
+    else:
+        # Spoke: single-session DirewolfSpokeTransport
+        if _direwolf_spoke is not None:
+            try:
+                _direwolf_spoke.close()
+            except Exception:
+                pass
+        dws = DirewolfSpokeTransport(
+            mycall      = callsign,
+            vhf_enabled = (vhf_card is not None),
+            hf_enabled  = (hf_card  is not None),
+        )
+        if dws.start():
+            _direwolf_spoke = dws
+            app.logger.info("_attach_direwolf: spoke DirewolfSpokeTransport attached")
+            threading.Thread(
+                target=_apply_stored_audio_levels,
+                args=(load_settings(),),
+                daemon=True, name="alsa-levels",
+            ).start()
+            return True, "Direwolf AX.25 attached (spoke)"
+        return False, "DirewolfSpokeTransport: could not connect to Direwolf AGW port 8000"
+
+
+def _start_hub_services():
+    """
+    Start all hub transport services at portal boot.
+
+    When _MSA_AVAILABLE is True (all new modules present):
+      - Creates shared SessionManager and HubCore singletons
+      - Starts multi-client TCPServerTransport on port 14256
+      - Optionally starts DirewolfTransport if Direwolf is running
+      - Optionally starts MeshSyncManager if peers are configured
+      - Wires HubCore.on_ui_event → all active ConsoleSession instances
+
+    When _MSA_AVAILABLE is False (modules missing):
+      - Falls back to the original single-client _start_hub_tcp_server()
+        behaviour so the portal degrades gracefully without crashing.
+    """
+    global _session_manager, _hub_core, _hub_tcp_server
+    global _direwolf, _mesh_sync
+
+    settings = load_settings()
+    if settings.get("role") != "hub":
+        app.logger.info("Hub services: role is not hub — skipping")
+        return
+
+    callsign = settings.get("callsign", "N0CALL").upper()
+
+    if not _MSA_AVAILABLE:
+        app.logger.warning(
+            "Hub services: MSA modules not available — "
+            "falling back to single-client TCP server"
+        )
+        _start_hub_tcp_server_legacy()
+        return
+
+    app.logger.info("Hub services: starting as %s (MSA v0.1.0)", callsign)
+
+    # ── SessionManager ────────────────────────────────────────────────
+    _session_manager = SessionManager(
+        max_sessions  = settings.get("max_sessions",        10),
+        idle_timeout  = settings.get("session_idle_timeout", 300),
+        auth_timeout  = settings.get("session_auth_timeout", 120),
+    )
+    _session_manager.start_watchdog()
+
+    # ── HubCore ───────────────────────────────────────────────────────
+    def _ui_event(event: dict):
+        """Push protocol events to every open browser console."""
+        for console_session in list(_active_sessions):
+            try:
+                console_session.send(event)
+            except Exception:
+                pass
+
+    _hub_core = HubCore(
+        mycall          = callsign,
+        session_manager = _session_manager,
+        on_ui_event     = _ui_event,
+    )
+
+    # ── Multi-client TCP server ───────────────────────────────────────
+    try:
+        tcp_srv = TCPServerTransport(
+            mycall               = callsign,
+            session_manager      = _session_manager,
+            on_client_message    = _hub_core.on_message,
+            on_client_connect    = _hub_core.on_connect,
+            on_client_disconnect = _hub_core.on_disconnect,
+            host = "0.0.0.0",
+            port = 14256,
+        )
+        if tcp_srv.start():
+            # Expose as _hub_tcp_server so ConsoleSession's legacy transport
+            # selection code (_start_tcp_listener / _start_hybrid_tcp) can
+            # detect it and not try to bind port 14256 a second time.
+            _hub_tcp_server = tcp_srv
+            app.logger.info(
+                "Hub TCP: multi-client asyncio server on 0.0.0.0:14256"
+            )
+        else:
+            app.logger.error("Hub TCP: multi-client server failed to start")
+    except Exception as exc:
+        app.logger.error("Hub TCP: startup error: %s", exc, exc_info=True)
+
+    # ── Direwolf AX.25 transport (optional) ──────────────────────────
+    vhf_card = settings.get("direwolf_vhf_card")
+    hf_card  = settings.get("direwolf_hf_card")
+
+    if vhf_card is not None or hf_card is not None:
+        def _attach_direwolf_with_retry():
+            """
+            Poll until Direwolf is running then attach.
+            Direwolf may take up to 45s to start if PulseAudio socket
+            activation is slow. _start_hub_services() runs in a thread
+            so we can block here without affecting the portal.
+            """
+            try:
+                from hf256.direwolf_config    import direwolf_running
+                from hf256.direwolf_transport import DirewolfTransport
+            except ImportError as exc:
+                app.logger.error("Hub Direwolf: import error: %s", exc)
+                return
+
+            for attempt in range(60):           # poll up to 60s
+                if direwolf_running():
+                    break
+                time.sleep(1)
+            else:
+                app.logger.warning(
+                    "Hub Direwolf: service did not start within 60s — "
+                    "configure via Settings → Direwolf"
+                )
+                return
+
+            with _direwolf_lock:
+                if _direwolf is not None:
+                    app.logger.info(
+                        "Hub Direwolf: already attached by concurrent call — skipping"
+                    )
+                    return
+                dw = DirewolfTransport(
+                    mycall               = callsign,
+                    session_manager      = _session_manager,
+                    on_client_message    = _hub_core.on_message,
+                    on_client_connect    = _hub_core.on_connect,
+                    on_client_disconnect = _hub_core.on_disconnect,
+                    vhf_enabled = (vhf_card is not None),
+                    hf_enabled  = (hf_card  is not None),
+                )
+                if dw.start():
+                    _direwolf = dw
+                    app.logger.info(
+                        "Hub Direwolf: AX.25 transport active (VHF=%s HF=%s)",
+                        bool(vhf_card), bool(hf_card),
+                    )
+                    threading.Thread(
+                        target=_apply_stored_audio_levels,
+                        args=(load_settings(),),
+                        daemon=True, name="alsa-levels",
+                    ).start()
+                else:
+                    app.logger.warning(
+                        "Hub Direwolf: failed to connect to AGW port 8000"
+                    )
+
+        threading.Thread(
+            target=_attach_direwolf_with_retry,
+            daemon=True, name="hub-direwolf-attach",
+        ).start()
+
+    # ── Mesh sync (optional) ─────────────────────────────────────────
+    peers = settings.get("mesh_peers", [])
+    if peers:
+        try:
+            from hf256.mesh_sync import MeshSyncManager
+            _mesh_sync = MeshSyncManager(
+                mycall        = callsign,
+                peers         = list(peers),
+                sync_interval = settings.get("mesh_sync_interval", 300),
+            )
+            _mesh_sync.start()
+            app.logger.info(
+                "Hub mesh: sync manager started with %d peer(s)", len(peers)
+            )
+        except Exception as exc:
+            app.logger.error(
+                "Hub mesh: startup error: %s", exc, exc_info=True
+            )
+
+    app.logger.info("Hub services: all transports started")
+
+
+def _start_hub_tcp_server_legacy():
+    """
+    Original single-client TCP server — used as graceful fallback when
+    the v0.1.0 MSA modules are not installed.  Identical to the old
+    _start_hub_tcp_server() from v0.0.x.
     """
     settings = load_settings()
     if settings.get("role") != "hub":
-        app.logger.info("Hub TCP boot server: role is not hub, skipping")
         return
     try:
         from hf256.tcp_transport import TCPTransport
         callsign = settings.get("callsign", "N0CALL").upper()
-        app.logger.info("Hub TCP boot server: starting on 0.0.0.0:14256 as %s",
-                        callsign)
+        app.logger.info(
+            "Hub TCP (legacy): starting on 0.0.0.0:14256 as %s", callsign
+        )
 
         t = TCPTransport(mycall=callsign, mode="server",
                          host="0.0.0.0", port=14256)
@@ -3893,18 +4812,13 @@ def _start_hub_tcp_server():
                     app.logger.error("Hub TCP dispatch error: %s", e)
             app.logger.info("Hub TCP: message with no active console session")
 
-        # Tracks the transport each session held before TCP took over,
-        # so it can be restored when TCP disconnects instead of being
-        # set to None and orphaned.
         _pre_tcp_transport = {}
 
         def _on_state(old_s, new_s, trigger=None):
+            global _hub_tcp_server
             app.logger.info("Hub TCP: state %d->%d remote=%s",
                             old_s, new_s, getattr(t, "remote_call", "?"))
             if new_s == 2:
-                # Reject if hub is already serving any other active transport
-                # (radio or a previous TCP connection). Close the new TCP
-                # socket — the spoke gets a clean connection close.
                 for session in list(_active_sessions):
                     with session._lock:
                         existing = session.transport
@@ -3913,30 +4827,22 @@ def _start_hub_tcp_server():
                             busy_with = (getattr(existing, "remote_call", None)
                                          or type(existing).__name__)
                             app.logger.warning(
-                                "Hub TCP: rejected incoming TCP spoke %s — "
-                                "hub already connected to %s",
+                                "Hub TCP (legacy): rejected incoming spoke %s "
+                                "— hub already connected to %s",
                                 getattr(t, "remote_call", "?"), busy_with)
-                            # Send a hub-busy notice in proper wire format
-                            # before dropping the connection, so the spoke
-                            # console can display "Hub busy" instead of a
-                            # silent disconnect.
-                            import json as _json
-                            import struct as _struct
+                            import json as _json, struct as _struct
                             try:
                                 notice = _json.dumps({
-                                    "type": "hub_busy",
-                                    "message": (
-                                        "Hub is busy with " + str(busy_with) +
-                                        " — try again later")
+                                    "type":    "hub_busy",
+                                    "message": ("Hub is busy with " +
+                                                str(busy_with) +
+                                                " — try again later")
                                 }).encode()
                                 framed = _struct.pack(">I", len(notice)) + notice
                                 if t.client_socket:
                                     t.client_socket.sendall(framed)
                             except Exception:
                                 pass
-                            # Close ONLY the client socket — do NOT call
-                            # t.close() which would kill the server_socket
-                            # and permanently close port 14256.
                             try:
                                 with t._lock:
                                     cs = t.client_socket
@@ -3945,7 +4851,9 @@ def _start_hub_tcp_server():
                                     t.remote_call = None
                                 if cs:
                                     try:
-                                        cs.shutdown(__import__('socket').SHUT_RDWR)
+                                        cs.shutdown(
+                                            __import__('socket').SHUT_RDWR
+                                        )
                                     except Exception:
                                         pass
                                     cs.close()
@@ -3953,9 +4861,6 @@ def _start_hub_tcp_server():
                                 pass
                             return
 
-                # Hand transport to active ConsoleSession, saving the
-                # pre-existing transport (e.g. FreeDV/ARDOP listener) so it
-                # can be restored when TCP disconnects rather than orphaned.
                 for session in list(_active_sessions):
                     try:
                         with session._lock:
@@ -3964,17 +4869,17 @@ def _start_hub_tcp_server():
                             session.transport_mode = "tcp"
                         t.on_message_received = session._on_message_received
                         session._on_state_change(old_s, new_s)
-                        app.logger.info("Hub TCP: transport handed to session")
+                        app.logger.info("Hub TCP (legacy): transport handed to session")
                         return
                     except Exception as e:
                         app.logger.error("Hub TCP handoff error: %s", e)
                 app.logger.warning("Hub TCP: spoke connected, no console open")
+
             elif new_s == 0:
                 for session in list(_active_sessions):
                     try:
                         with session._lock:
                             if session.transport is t:
-                                # Restore pre-TCP transport instead of None
                                 prev = _pre_tcp_transport.pop(id(session), None)
                                 session.transport = prev
                                 app.logger.info(
@@ -3990,11 +4895,14 @@ def _start_hub_tcp_server():
 
         ok = t.connect()
         if ok:
-            app.logger.info("Hub TCP server listening on 0.0.0.0:14256")
+            _hub_tcp_server = t
+            app.logger.info("Hub TCP (legacy): listening on 0.0.0.0:14256")
         else:
-            app.logger.error("Hub TCP server failed to bind port 14256")
+            app.logger.error(
+                "Hub TCP (legacy): failed to bind port 14256"
+            )
     except Exception as e:
-        app.logger.error("_start_hub_tcp_server error: %s", e)
+        app.logger.error("_start_hub_tcp_server_legacy error: %s", e)
 
 
 if __name__ == "__main__":
@@ -4004,12 +4912,16 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         datefmt="%H:%M:%S"
     )
-    # Promote Flask app logger and console logger to INFO
-    # so errors appear in journalctl without debug=True
     app.logger.setLevel(logging.INFO)
     logging.getLogger("hf256").setLevel(logging.INFO)
-    # Start hub TCP server at boot — no browser session required
-    threading.Thread(target=_start_hub_tcp_server,
-                     daemon=True, name="hub-tcp-boot").start()
+
+    # Start hub transport services at boot — no browser session required.
+    # With MSA modules: multi-client TCP + Direwolf + Mesh.
+    # Without MSA modules: legacy single-client TCP (graceful degradation).
+    threading.Thread(
+        target=_start_hub_services,
+        daemon=True,
+        name="hub-services-boot",
+    ).start()
 
     app.run(host="0.0.0.0", port=80, debug=False)

@@ -115,7 +115,7 @@
   <a class="nav-btn" href="/files">Hub Files</a>
   <a class="nav-btn active" href="/help">Help</a>
   <div class="topbar-spacer"></div>
-  <span class="version-label">Version Alpha 0.0.1</span>
+  <span class="version-label">Version Alpha 0.0.6</span>
 </div>
 
 <div class="page-wrap">
@@ -140,8 +140,7 @@
 <p><strong>Supported transports:</strong>
 | Transport | Use case |
 |-----------|----------|
-| FreeDV HF | HF radio — fully open-source modem, no licence fees |
-| ARDOP HF | HF radio — alternative open-source modem |
+| ARDOP HF | HF radio — open-source ARDOP modem, SSB transceiver required |
 | ARDOP FM | VHF/UHF FM radio — short range, fast |
 | TCP | Internet or LAN — for testing and fixed infrastructure |</p>
 <hr />
@@ -229,13 +228,13 @@ All stations on your network must share the same AES-256 encryption key. Either 
 <h2 id="the-console">The Console</h2>
 <p>The console is the main operating interface. Open it at <code>http://&lt;pi-address&gt;/console</code>.</p>
 <pre><code>┌─────────────────────────────────────────────────────┐
-│ HF-256   Status   Settings   Console    Ver Alpha 0.0.1 │
+│ HF-256   Status   Settings   Console    Ver Alpha 0.0.5 │
 ├──────────────────┬──────────────────────────────────┤
-│ L3LFN │ FreeDV   │ ⬤ Connected to L3RHUB            │
+│ L3LFN │ ARDOP HF │ ⬤ Connected to L3RHUB            │
 ├──────────────────┴──────────────────────────────────┤
 │                                                      │
 │  ★ Session ready — L3LFN — key loaded               │
-│  ★ Transport: FreeDV HF                             │
+│  ★ Transport: ARDOP HF                              │
 │  ★ ✓ Connected to L3RHUB                           │
 │  ★ ✓ Authenticated — Welcome L3LFN                 │
 │  → L3LFN: Hello from the field                     │
@@ -250,7 +249,7 @@ All stations on your network must share the same AES-256 encryption key. Either 
 <hr />
 <h2 id="typical-spoke-session">Typical Spoke Session</h2>
 <h3 id="1-select-transport">1. Select transport</h3>
-<p>The sidebar shows the available transports. Click <strong>FreeDV HF</strong> (or ARDOP, or TCP). The modem starts automatically.</p>
+<p>The sidebar shows the available transports. Click <strong>ARDOP HF</strong>, <strong>ARDOP FM</strong>, or <strong>TCP</strong>. The modem starts automatically — no manual service management required.</p>
 <h3 id="2-connect-to-the-hub">2. Connect to the hub</h3>
 <pre><code>/connect L3RHUB
 </code></pre>
@@ -306,35 +305,17 @@ All stations on your network must share the same AES-256 encryption key. Either 
 <li><strong>Delete</strong> any file with the 🗑 button</li>
 </ul>
 <p>The Hub Files page is available in the navigation bar on all pages. It is accessible from any device on the same network as the hub Pi — no command line access is needed.</p>
-<p>Files are sent in 512-byte chunks over the ARQ link. On FreeDV DATAC1 at typical HF speeds a 50 KB file takes approximately 10–15 minutes. Plan accordingly.</p>
+<p>Files are sent in 512-byte chunks over the ARQ link. On ARDOP HF at typical HF speeds a 50 KB file takes approximately 10–15 minutes. On ARDOP FM over VHF the same file transfers in seconds. Plan accordingly.</p>
 <hr />
-<h2 id="freedv-modes">FreeDV Modes</h2>
-<p>The FreeDV mode is selected from the sidebar in the console. All stations in a QSO must use the same mode.</p>
-<table>
-<thead>
-<tr>
-<th>Mode</th>
-<th>Bandwidth</th>
-<th>Speed</th>
-<th>Use when</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>DATAC1</td>
-<td>1.25 kHz</td>
-<td>~980 bps</td>
-<td>Standard — good balance of speed and robustness</td>
-</tr>
-<tr>
-<td>Announce</td>
-<td>1.25 kHz</td>
-<td>~980 bps</td>
-<td>Announce to all stations simultaneously, fire and forget no ARQ</td>
-</tr>
-</tbody>
-</table>
-<p><strong>DATAC1 is the default and only speed as testing showed no real improvement in other FREEDV speeds for this application.</strong></p>
+<h2 id="ardop-hf-modem">ARDOP HF — HF Radio Modem</h2>
+<p>ARDOP (Amateur Radio Digital Open Protocol) is the modem used for HF radio connections. It runs as the <code>ardopc</code> process, launched automatically by HF-256 when you select ARDOP HF or ARDOP FM in the console sidebar — no manual service management is required.</p>
+<p><strong>ARDOP HF bandwidth:</strong> The modem operates at up to 2000 Hz bandwidth on SSB. The ARQ link automatically adapts its data rate to channel conditions — no manual mode switching is needed. On a typical mid-latitude HF path expect throughput of 200–1000 bps depending on band and propagation.</p>
+<p><strong>PTT control:</strong> ardopc keys the transmitter using the method configured during setup:</p>
+<ul>
+<li><strong>CI-V CAT PTT</strong> — for Icom and Xiegu radios with built-in USB (IC-705, IC-7300, IC-7100, IC-9700, X6100, G90)</li>
+<li><strong>RTS PTT</strong> — for radios connected via DigiRig Mobile or any interface using RTS on the serial port</li>
+<li><strong>VOX</strong> — fallback if no serial port is configured</li>
+</ul>
 <hr />
 <h2 id="tcp-mode-private-encrypted-internet-communications">TCP Mode — Private Encrypted Internet Communications</h2>
 <p>TCP mode connects two HF-256 stations directly over the internet or a local area network without any radio hardware. Despite the name, TCP mode is not limited to local use — it works across the public internet anywhere two stations can reach each other over port 14256.</p>
@@ -365,13 +346,13 @@ All stations on your network must share the same AES-256 encryption key. Either 
 <p><strong>Selecting ARDOP FM:</strong> Click <strong>ARDOP FM</strong> in the console sidebar. The same DigiRig Mobile or compatible USB audio interface used for HF works on VHF — simply connect it to your VHF/UHF radio instead.</p>
 <hr />
 <h2 id="hybrid-mode">Hybrid Mode — Simultaneous TCP and Radio</h2>
-<p>Hybrid Mode is a <strong>hub-only feature</strong> that allows the hub station to accept TCP/internet connections and radio connections (FreeDV or ARDOP FM) simultaneously. A spoke with internet access can connect via TCP and leave messages for a spoke that only has radio access — and vice versa. All messages go through the same store-and-forward system regardless of transport.</p>
+<p>Hybrid Mode is a <strong>hub-only feature</strong> that allows the hub station to accept TCP/internet connections and radio connections (ARDOP HF or ARDOP FM) simultaneously. A spoke with internet access can connect via TCP and leave messages for a spoke that only has radio access — and vice versa. All messages go through the same store-and-forward system regardless of transport.</p>
 <h3 id="enabling-hybrid-mode">Enabling Hybrid Mode</h3>
 <p>Click the <strong>Hybrid Mode</strong> button in the console sidebar Transport section. The button uses a dashed border to distinguish it from the mutually-exclusive transport buttons. When active it shows ◉ Hybrid Mode.</p>
 <p>Once enabled:</p>
 <ul>
 <li>The TCP server on port 14256 stays running permanently</li>
-<li>You can freely switch between FreeDV and ARDOP FM without losing TCP connectivity</li>
+<li>You can freely switch between ARDOP HF and ARDOP FM without losing TCP connectivity</li>
 <li>TCP spokes can connect while radio spokes connect over the air simultaneously</li>
 <li>Clicking TCP/Internet while Hybrid is on shows a note that TCP is already running</li>
 </ul>
@@ -390,7 +371,7 @@ All stations on your network must share the same AES-256 encryption key. Either 
 <tbody>
 <tr>
 <td><code>/connect &lt;CALLSIGN&gt;</code></td>
-<td>Connect to a hub station (FreeDV/ARDOP) or <code>/connect &lt;IP&gt;</code> (TCP)</td>
+<td>Connect to a hub station via ARDOP (HF or FM), or <code>/connect &lt;IP&gt;</code> for TCP</td>
 </tr>
 <tr>
 <td><code>/disconnect</code></td>
@@ -471,21 +452,6 @@ All stations on your network must share the same AES-256 encryption key. Either 
 </tr>
 </tbody>
 </table>
-<h3 id="freedv">FreeDV</h3>
-<table>
-<thead>
-<tr>
-<th>Command</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>/announce &lt;message&gt;</code></td>
-<td>Broadcast to all listening stations (no connection needed)</td>
-</tr>
-</tbody>
-</table>
 <h3 id="hub-only">Hub only</h3>
 <table>
 <thead>
@@ -545,10 +511,10 @@ All stations on your network must share the same AES-256 encryption key. Either 
 <p>The network key is only used when encryption is enabled. Plaintext mode stations and encrypted stations cannot communicate directly — all stations in a session must use the same mode. The hub operator can enforce this by ensuring all registered users configure their stations consistently.</p>
 <hr />
 <h2 id="troubleshooting">Troubleshooting</h2>
-<p><strong>Connection attempts time out / no CONN_ACK received</strong>
-- Confirm the hub Pi has FreeDV selected and the modem is running (green status on the hub's Status page)
-- Check that both stations are on the same frequency and mode
-- Try DATAC3 — it is more robust on marginal paths
+<p><strong>Connection attempts time out / no ARQ connection established</strong>
+- Confirm the hub Pi has ARDOP HF selected and the ardopc modem is running (green status on the hub's Status page)
+- Check that both stations are on the same frequency with the same SSB mode (USB for HF)
+- ARDOP automatically adapts rate to conditions — if connections repeatedly fail, check RF path, antenna, and audio levels
 - The spoke will retry automatically up to 5 times before giving up</p>
 <p><strong>Authentication times out after connecting</strong>
 - Check that your callsign is registered on the hub (<code>/listusers</code> on the hub console)
@@ -558,9 +524,11 @@ All stations on your network must share the same AES-256 encryption key. Either 
 - This is usually RF — the ARQ will retry automatically up to 3 times per chunk
 - If the link drops, use <code>/disconnect</code> and reconnect to restart the session
 - Use <code>/cancel</code> to abort cleanly then try again</p>
-<p><strong>Hub shows "KISS socket closed" and restarts the listener</strong>
-- This is normal after a disconnect — the listener restarts automatically
-- If it happens repeatedly without any connection attempt, check that <code>freedvtnc2</code> is running on the Status page</p>
+<p><strong>ardopc process stops unexpectedly</strong>
+- Check the Status page — ardopc is shown as running/idle under Services
+- Select your ARDOP transport again in the console sidebar — this restarts ardopc automatically
+- Check <code>journalctl -u hf256-portal -n 50</code> for startup errors (audio device not found, port in use)
+- Confirm the audio card number in Settings matches the device shown by <code>arecord -l</code></p>
 <p><strong>Both sides disconnected but the console still shows Connected</strong>
 - The inactivity watchdog will disconnect after 2 minutes of silence
 - You can force disconnect with <code>/disconnect</code> at any time</p>
@@ -590,7 +558,21 @@ All stations on your network must share the same AES-256 encryption key. Either 
 └── hf256/               ← Core Python package
 </code></pre>
 <hr />
-<p><em>HF-256 — Version Alpha 0.0.1</em></p>
+<h2 id="ssh-access">SSH Access</h2>
+<p>Each Pi is accessible via SSH for diagnostics and administration.</p>
+<pre><code>Username: pi
+Password: 12345678
+</code></pre>
+<p>Connect from any device on the same network:</p>
+<pre><code>ssh pi@hf256.local
+# or by IP address
+ssh pi@192.168.4.1      # when Pi is in AP mode
+ssh pi@&lt;assigned-ip&gt;    # when Pi is in client WiFi mode
+</code></pre>
+<p>The IP address is shown on the PiTFT display. If you cannot connect via <code>hf256.local</code>, use the IP address directly.</p>
+<blockquote><p><strong>Security note:</strong> Change the default password after initial setup using <code>passwd</code> at the SSH prompt. This is especially important for hub stations accessible from a wider network.</p></blockquote>
+<hr />
+<p><em>HF-256 — Version Alpha 0.0.6</em></p>
     </div>
   </div>
 </div>

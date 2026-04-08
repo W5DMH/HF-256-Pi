@@ -1,0 +1,33 @@
+[Unit]
+Description=Direwolf AX.25 Soundcard TNC (HF-256)
+Documentation=https://github.com/wb2osz/direwolf
+# rigctld provides CAT PTT for CI-V radios (Xiegu, Icom).
+# Wants= (not Requires=) so Direwolf still starts if rigctld is not installed.
+After=network.target sound.target rigctld.service
+Wants=sound.target rigctld.service
+
+[Service]
+Type=simple
+
+# Brief settling time for ALSA USB device enumeration at boot.
+# The DigiRig USB audio enumerates quickly but the kernel needs a moment
+# to complete the USB descriptor read before ALSA opens the device.
+ExecStartPre=/bin/sleep 2
+
+ExecStart=/usr/bin/direwolf -t 0 -c /etc/direwolf/direwolf.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=30
+
+# Run as pi so it has access to the audio group
+User=pi
+Group=pi
+SupplementaryGroups=dialout audio gpio
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=direwolf
+
+[Install]
+WantedBy=multi-user.target

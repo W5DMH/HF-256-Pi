@@ -15,73 +15,76 @@
     --bg: #0d1117; --surface: #161b22; --border: #30363d;
     --text: #e6edf3; --muted: #8b949e; --accent: #2ea043;
     --blue: #388bfd; --orange: #d29922; --red: #da3633;
+    --purple: #8957e5;
     --radius: 8px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text);
          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
          sans-serif; font-size: 15px; line-height: 1.6; }
-  .container { max-width: 720px; margin: 0 auto;
-               padding: 20px 16px; }
-  nav { display: flex; gap: 8px; margin-bottom: 24px; }
+  .container { max-width: 720px; margin: 0 auto; padding: 20px 16px; }
+  nav { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
   .nav-btn { padding: 6px 14px; border-radius: 6px;
              text-decoration: none; font-size: 0.88rem;
              border: 1px solid var(--border); color: var(--text);
              background: var(--surface); }
-  .nav-btn.active { background: var(--blue);
-                    border-color: var(--blue); color: #fff; }
+  .nav-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
   h1 { font-size: 1.4rem; color: var(--blue); margin-bottom: 4px; }
-  .subtitle { color: var(--muted); margin-bottom: 20px;
-              font-size: 0.9rem; }
+  .subtitle { color: var(--muted); margin-bottom: 20px; font-size: 0.9rem; }
   .card { background: var(--surface); border: 1px solid var(--border);
-          border-radius: var(--radius); padding: 20px;
-          margin-bottom: 18px; }
+          border-radius: var(--radius); padding: 20px; margin-bottom: 18px; }
   .card h2 { font-size: 0.95rem; font-weight: 600; color: var(--muted);
-             text-transform: uppercase; letter-spacing: 0.05em;
-             margin-bottom: 16px; }
+             text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px;
+             display: flex; align-items: center; gap: 8px; }
+  .card h2 .hub-badge {
+    font-size: 0.7rem; background: rgba(137,87,229,0.2);
+    color: var(--purple); border: 1px solid var(--purple);
+    padding: 1px 7px; border-radius: 8px; letter-spacing: 0.04em;
+    text-transform: none; font-weight: 600;
+  }
   label { display: block; font-size: 0.85rem; color: var(--muted);
           margin-bottom: 5px; margin-top: 14px; }
   label:first-of-type { margin-top: 0; }
-  input[type="text"], input[type="password"], select, textarea {
+  input[type="text"], input[type="password"], input[type="number"],
+  select, textarea {
     width: 100%; padding: 8px 10px;
     background: var(--bg); border: 1px solid var(--border);
     border-radius: 6px; color: var(--text); font-size: 0.9rem;
   }
-  input:focus, select:focus, textarea:focus {
-    outline: none; border-color: var(--blue);
-  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--blue); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 520px) { .two-col { grid-template-columns: 1fr; } }
   .btn { display: inline-flex; align-items: center; gap: 6px;
          padding: 8px 16px; border-radius: 6px; border: none;
-         cursor: pointer; font-size: 0.9rem; font-weight: 500; }
+         cursor: pointer; font-size: 0.9rem; font-weight: 500;
+         transition: opacity 0.15s; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-primary   { background: var(--accent);  color: #fff; }
-  .btn-secondary { background: var(--surface);
-                   border: 1px solid var(--border); color: var(--text); }
+  .btn-secondary { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
   .btn-danger    { background: var(--red);     color: #fff; }
   .btn-blue      { background: var(--blue);    color: #fff; }
-  .btn-row { display: flex; gap: 10px; flex-wrap: wrap;
-             margin-top: 14px; }
-  .alert { padding: 10px 14px; border-radius: 6px;
-           font-size: 0.88rem; margin-top: 12px; }
-  .alert-ok   { background: rgba(46,160,67,0.12);
-                border: 1px solid var(--accent); }
-  .alert-err  { background: rgba(218,54,51,0.12);
-                border: 1px solid var(--red); }
-  .alert-info { background: rgba(56,139,253,0.1);
-                border: 1px solid var(--blue); }
-  .alert-warn { background: rgba(210,153,34,0.1);
-                border: 1px solid var(--orange); }
-  .role-grid { display: grid;
-               grid-template-columns: 1fr 1fr; gap: 12px;
-               margin-top: 10px; }
+  .btn-purple    { background: var(--purple);  color: #fff; }
+  .btn-sm { padding: 4px 11px; font-size: 0.8rem; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .alert { padding: 10px 14px; border-radius: 6px; font-size: 0.88rem; margin-top: 12px; }
+  .alert-ok   { background: rgba(46,160,67,0.12);  border: 1px solid var(--accent); }
+  .alert-err  { background: rgba(218,54,51,0.12);  border: 1px solid var(--red); }
+  .alert-info { background: rgba(56,139,253,0.1);  border: 1px solid var(--blue); }
+  .alert-warn { background: rgba(210,153,34,0.1);  border: 1px solid var(--orange); }
+  .status-row { display: flex; align-items: center; gap: 10px;
+                margin-top: 10px; font-size: 0.85rem;
+                color: var(--muted); min-height: 24px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .dot-ok   { background: var(--accent); }
+  .dot-err  { background: var(--red); }
+  .dot-warn { background: var(--orange); }
+  .dot-idle { background: var(--muted); }
+  .role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
   .role-card { border: 2px solid var(--border); border-radius: 6px;
-               padding: 14px; cursor: pointer;
-               transition: border-color 0.15s; }
+               padding: 14px; cursor: pointer; transition: border-color 0.15s; }
   .role-card:hover    { border-color: var(--blue); }
-  .role-card.selected { border-color: var(--accent);
-                        background: rgba(46,160,67,0.08); }
-  .role-card .role-name { font-weight: 700; font-size: 1rem;
-                          margin-bottom: 4px; }
+  .role-card.selected { border-color: var(--accent); background: rgba(46,160,67,0.08); }
+  .role-card .role-name { font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
   .role-card .role-desc { font-size: 0.8rem; color: var(--muted); }
   .key-box { font-family: monospace; font-size: 0.8rem;
              background: var(--bg); border: 1px solid var(--border);
@@ -89,15 +92,10 @@
              color: #9ebc9e; min-height: 48px; margin-top: 10px; }
   .key-status { display: flex; align-items: center; gap: 8px;
                 margin-bottom: 12px; font-size: 0.88rem; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; }
-  .dot-ok   { background: var(--accent); }
-  .dot-err  { background: var(--red); }
   .wifi-toggle { display: flex; gap: 0; margin-top: 10px;
-                 border: 1px solid var(--border); border-radius: 6px;
-                 overflow: hidden; }
-  .wifi-mode-btn { flex: 1; padding: 8px; text-align: center;
-                   cursor: pointer; font-size: 0.88rem;
-                   background: var(--bg); color: var(--muted);
+                 border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .wifi-mode-btn { flex: 1; padding: 8px; text-align: center; cursor: pointer;
+                   font-size: 0.88rem; background: var(--bg); color: var(--muted);
                    border: none; transition: all 0.15s; }
   .wifi-mode-btn.active { background: var(--blue); color: #fff; }
   .hidden { display: none; }
@@ -108,40 +106,60 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   #save-btn { min-width: 160px; }
 
+  /* Direwolf channel sub-card */
+  .channel-box {
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 14px; margin-top: 14px;
+    background: rgba(0,0,0,0.15);
+  }
+  .channel-box h3 { font-size: 0.82rem; font-weight: 700;
+                    text-transform: uppercase; letter-spacing: 0.06em;
+                    margin-bottom: 12px; }
+  .channel-box.vhf h3 { color: var(--purple); }
+  .channel-box.hf  h3 { color: var(--orange); }
+  .channel-disabled { opacity: 0.45; }
+
+  /* Peer list */
+  .peer-list { margin-top: 10px; }
+  .peer-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 5px;
+    margin-bottom: 6px; font-family: monospace; font-size: 0.88rem;
+  }
+  .peer-addr { flex: 1; color: var(--text); }
+  .peer-idle { font-size: 0.75rem; color: var(--muted); }
+  .peer-empty { color: var(--muted); font-size: 0.88rem;
+                font-style: italic; padding: 8px 0; }
+
+  /* Number input narrower */
+  .num-input { width: auto; min-width: 80px; }
+
   /* ── Logo ───────────────────────────────────────────────── */
-  .hf-logo {
-    display: inline-flex; align-items: center; gap: 8px;
-    text-decoration: none; margin-right: 4px;
-  }
-  .hf-logo img {
-    width: 28px; height: 28px;
-    border-radius: 6px;
-    /* subtle glow matching the lock icon's green */
-    filter: drop-shadow(0 0 4px rgba(46,160,67,0.4));
-  }
-  .hf-logo span {
-    font-size: 0.88rem; font-weight: 700;
-    color: var(--accent); letter-spacing: 0.04em;
-    display: none;   /* show text only on wider screens */
-  }
+  .hf-logo { display: inline-flex; align-items: center; gap: 8px;
+             text-decoration: none; margin-right: 4px; }
+  .hf-logo img { width: 28px; height: 28px; border-radius: 6px;
+                 filter: drop-shadow(0 0 4px rgba(46,160,67,0.4)); }
+  .hf-logo span { font-size: 0.88rem; font-weight: 700; color: var(--accent);
+                  letter-spacing: 0.04em; display: none; }
   @media (min-width: 480px) { .hf-logo span { display: inline; } }
 </style>
 </head>
 <body>
 <div class="container">
   <nav>
-    <a class="hf-logo" href="/status"><img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span></a><a class="nav-btn" href="/status">Status</a>
+    <a class="hf-logo" href="/status"><img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span></a>
+    <a class="nav-btn" href="/status">Status</a>
     <a class="nav-btn active" href="/settings">Settings</a>
     <a class="nav-btn" href="/console">Console</a>
-  <a class="nav-btn" href="/files">Hub Files</a>
-  <a class="nav-btn" href="/help">Help</a>
+    <a class="nav-btn" href="/files">Hub Files</a>
+    <a class="nav-btn" href="/help">Help</a>
   </nav>
 
   <h1>Settings</h1>
-  <p class="subtitle">Configure your station identity, encryption,
-     and network.</p>
+  <p class="subtitle">Configure your station identity, encryption, radio transports, and network.</p>
 
-  <!-- Station Identity -->
+  <!-- ── Station Identity ─────────────────────────────────── -->
   <div class="card">
     <h2>Station Identity</h2>
 
@@ -156,19 +174,18 @@
       <div class="role-card {% if settings.role == 'hub' %}selected{% endif %}"
            id="role-hub" onclick="selectRole('hub')">
         <div class="role-name">Hub</div>
-        <div class="role-desc">Store-and-forward server.
-          Runs 24/7. Receives and relays messages for spoke
-          stations.</div>
+        <div class="role-desc">Store-and-forward server. Runs 24/7.
+          Accepts up to 10 simultaneous spoke connections across all
+          transports. Supports Direwolf AX.25 and mesh sync.</div>
       </div>
       <div class="role-card {% if settings.role == 'spoke' %}selected{% endif %}"
            id="role-spoke" onclick="selectRole('spoke')">
         <div class="role-name">Spoke</div>
         <div class="role-desc">Client station. Connects to a hub
-          to send and receive messages over HF.</div>
+          to send and receive messages over HF, VHF, or internet.</div>
       </div>
     </div>
-    <input type="hidden" id="role"
-           value="{{ settings.role or '' }}">
+    <input type="hidden" id="role" value="{{ settings.role or '' }}">
 
     <div id="hub-address-row"
          {% if settings.role != 'spoke' %}class="hidden"{% endif %}>
@@ -179,7 +196,7 @@
     </div>
   </div>
 
-  <!-- Encryption -->
+  <!-- ── Encryption ───────────────────────────────────────── -->
   <div class="card">
     <h2>Encryption</h2>
 
@@ -187,29 +204,21 @@
       <div class="dot {% if key_configured %}dot-ok{% else %}dot-err{% endif %}"
            id="key-dot"></div>
       <span id="key-status-text">
-        {% if key_configured %}
-          Network key is configured
-        {% else %}
-          No network key — encryption disabled
-        {% endif %}
+        {% if key_configured %}Network key is configured
+        {% else %}No network key — encryption disabled{% endif %}
       </span>
     </div>
 
     <div class="btn-row">
-      <button class="btn btn-blue" onclick="generateKey()">
-        🔑 Generate New Key
-      </button>
-      <button class="btn btn-secondary" onclick="exportKey()">
-        📋 Export Key
-      </button>
+      <button class="btn btn-blue" onclick="generateKey()">🔑 Generate New Key</button>
+      <button class="btn btn-secondary" onclick="exportKey()">📋 Export Key</button>
     </div>
 
     <div class="key-box" id="key-display">
       {% if not key_configured %}
         No key configured — click Generate to create one
       {% else %}
-        Key is set. Click Export to view for sharing to
-        other stations.
+        Key is set. Click Export to view for sharing to other stations.
       {% endif %}
     </div>
 
@@ -217,10 +226,8 @@
     <div style="display:flex;gap:8px">
       <input type="password" id="import-key-input"
              placeholder="Paste Base64 key from another station">
-      <button class="btn btn-secondary"
-              style="white-space:nowrap" onclick="importKey()">
-        Import
-      </button>
+      <button class="btn btn-secondary" style="white-space:nowrap"
+              onclick="importKey()">Import</button>
     </div>
 
     <div id="key-alert"></div>
@@ -232,7 +239,7 @@
     </label>
   </div>
 
-  <!-- WiFi -->
+  <!-- ── WiFi ─────────────────────────────────────────────── -->
   <div class="card">
     <h2>WiFi</h2>
 
@@ -253,16 +260,12 @@
          {% if settings.wifi_mode == 'client' %}class="hidden"{% endif %}>
       <label>AP SSID</label>
       <input type="text" id="ap-ssid"
-             value="{{ settings.ap_ssid or 'HF256-N0CALL' }}"
-             maxlength="32">
+             value="{{ settings.ap_ssid or 'HF256-N0CALL' }}" maxlength="32">
       <label>AP Password</label>
       <input type="password" id="ap-password"
-             value="{{ settings.ap_password or 'hf256setup' }}"
-             maxlength="63">
+             value="{{ settings.ap_password or 'hf256setup' }}" maxlength="63">
       <div class="btn-row">
-        <button class="btn btn-secondary" onclick="applyAP()">
-          Apply AP Settings
-        </button>
+        <button class="btn btn-secondary" onclick="applyAP()">Apply AP Settings</button>
       </div>
     </div>
 
@@ -277,26 +280,345 @@
              value="{{ settings.client_password or '' }}"
              placeholder="WiFi password">
       <div class="btn-row">
-        <button class="btn btn-secondary" onclick="joinNetwork()">
-          Join Network
-        </button>
+        <button class="btn btn-secondary" onclick="joinNetwork()">Join Network</button>
       </div>
       <div class="alert alert-warn" style="margin-top:12px">
-        After joining a network the portal will be available at
-        the new IP address shown on the PiTFT display.
-        The AP will be disabled.
+        After joining a network the portal will be available at the new IP
+        address shown on the PiTFT display. The AP will be disabled.
       </div>
     </div>
 
     <div id="wifi-alert"></div>
   </div>
 
-  <!-- Save -->
+  <!-- ════════════════════════════════════════════════════════
+       DIREWOLF AX.25 — visible to all roles (hub and spoke)
+       ════════════════════════════════════════════════════════ -->
+
+  <!-- ── Direwolf AX.25 ───────────────────────────────────── -->
+  <div class="card" id="direwolf-card">
+    <h2>
+      Direwolf AX.25
+      <span class="hub-badge" style="background:rgba(56,139,253,0.15);
+            color:var(--blue);border-color:var(--blue)">Hub &amp; Spoke</span>
+    </h2>
+
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:14px">
+      Direwolf provides AX.25 connected-mode packet radio.
+      <span id="dw-role-hint-hub" {% if settings.role != 'hub' %}style="display:none"{% endif %}>
+        As a <strong>hub</strong>, Direwolf listens for incoming spoke connections
+        on the configured channels simultaneously.
+      </span>
+      <span id="dw-role-hint-spoke" {% if settings.role == 'hub' %}style="display:none"{% endif %}>
+        As a <strong>spoke</strong>, Direwolf lets you connect to a hub via
+        VHF AX.25 (9600 baud) or HF AX.25 (300 baud) using
+        <code style="font-size:0.8rem">/connect &lt;HUBCALL&gt;</code> in the Console.
+      </span>
+      Configure one or both channels below. Leave audio card blank to disable
+      that channel. Direwolf must be installed
+      (<code style="font-size:0.8rem">apt install direwolf</code>).
+    </p>
+
+    <!-- Status row -->
+    <div class="status-row" id="dw-status-row">
+      <div class="dot dot-idle" id="dw-dot"></div>
+      <span id="dw-status-text">Checking Direwolf status...</span>
+    </div>
+
+    <!-- Scan button -->
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn btn-secondary btn-sm" onclick="dwScanHardware()">
+        🔍 Scan Audio &amp; Serial Ports
+      </button>
+    </div>
+
+    <!-- VHF Channel -->
+    <div class="channel-box vhf" id="vhf-box">
+      <h3>⬡ VHF Channel — Port 0 (9600 baud G3RUH)</h3>
+      <div class="two-col">
+        <div>
+          <label>ALSA Audio Card</label>
+          <select id="dw-vhf-card">
+            <option value="">— disabled —</option>
+          </select>
+        </div>
+        <div>
+          <label>Baud Rate</label>
+          <select id="dw-vhf-baud">
+            <option value="9600" {% if settings.direwolf_vhf_baud == 9600 %}selected{% endif %}>9600 (G3RUH FSK)</option>
+            <option value="1200" {% if settings.direwolf_vhf_baud == 1200 %}selected{% endif %}>1200 (Bell 202 AFSK)</option>
+          </select>
+        </div>
+      </div>
+      <div class="two-col">
+        <div>
+          <label>PTT Serial Port</label>
+          <select id="dw-vhf-serial">
+            <option value="">— VOX / none —</option>
+          </select>
+        </div>
+        <div>
+          <label>PTT Method</label>
+          <select id="dw-vhf-ptt">
+            <option value="RTS" {% if settings.direwolf_vhf_ptt == 'RTS' %}selected{% endif %}>RTS</option>
+            <option value="DTR" {% if settings.direwolf_vhf_ptt == 'DTR' %}selected{% endif %}>DTR</option>
+            <option value="VOX" {% if settings.direwolf_vhf_ptt == 'VOX' %}selected{% endif %}>VOX</option>
+            <option value="GPIO" {% if settings.direwolf_vhf_ptt == 'GPIO' %}selected{% endif %}>GPIO</option>
+          </select>
+        </div>
+      </div>
+      <div class="alert alert-info" style="margin-top:10px;font-size:0.82rem">
+        <strong>DigiRig Mobile:</strong> select <code>/dev/ttyUSB0</code>
+        (or <code>ttyUSB1</code> for a second unit) and use <strong>RTS</strong>.
+        <br>
+        <strong>Icom IC-9700 / FM radios with data port:</strong> select the
+        radio's USB serial port and use <strong>RTS</strong>.
+      </div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-secondary btn-sm"
+                onclick="dwTestPTT('vhf')">🔊 Test PTT (VHF)</button>
+        <button class="btn btn-secondary btn-sm"
+                onclick="dwCheckAudio('vhf')">🎙️ Check RX (VHF)</button>
+      </div>
+      <div class="status-row">
+        <div class="dot dot-idle" id="vhf-test-dot"></div>
+        <span id="vhf-test-status">—</span>
+      </div>
+    </div>
+
+    <!-- HF Channel -->
+    <div class="channel-box hf" id="hf-box">
+      <h3>⬡ HF Channel — Port 1 (300 baud Bell 202 AFSK)</h3>
+      <div class="two-col">
+        <div>
+          <label>ALSA Audio Card</label>
+          <select id="dw-hf-card">
+            <option value="">— disabled —</option>
+          </select>
+        </div>
+        <div>
+          <label>Tone Pair</label>
+          <select id="dw-hf-tones" disabled>
+            <option value="1600/1800">1600 / 1800 Hz (standard)</option>
+          </select>
+        </div>
+      </div>
+      <div class="two-col">
+        <div>
+          <label>PTT Serial Port</label>
+          <select id="dw-hf-serial">
+            <option value="">— VOX / none —</option>
+          </select>
+        </div>
+        <div>
+          <label>PTT Method</label>
+          <select id="dw-hf-ptt" onchange="document.getElementById('hf-hamlib-row').style.display=this.value==='CAT'?'':'none'">
+            <option value="RTS" {% if settings.direwolf_hf_ptt == 'RTS' %}selected{% endif %}>RTS — hardware PTT (DigiRig)</option>
+            <option value="DTR" {% if settings.direwolf_hf_ptt == 'DTR' %}selected{% endif %}>DTR — hardware PTT</option>
+            <option value="CAT" {% if settings.direwolf_hf_ptt == 'CAT' %}selected{% endif %}>CAT — CI-V via rigctld (Xiegu, Icom)</option>
+            <option value="VOX" {% if settings.direwolf_hf_ptt == 'VOX' %}selected{% endif %}>VOX</option>
+            <option value="GPIO" {% if settings.direwolf_hf_ptt == 'GPIO' %}selected{% endif %}>GPIO</option>
+          </select>
+        </div>
+      </div>
+      <div class="two-col" id="hf-hamlib-row"
+           style="{{ '' if settings.direwolf_hf_ptt == 'CAT' else 'display:none' }}">
+        <div>
+          <label>Hamlib Model</label>
+          <input id="dw-hf-hamlib" type="number" min="1"
+                 placeholder="e.g. 3021 (G90/X1600), 3070 (IC-7300)"
+                 value="{{ settings.direwolf_hf_hamlib_model or '' }}"
+                 style="width:100%;padding:6px 8px;background:var(--bg);
+                        border:1px solid var(--border);border-radius:4px;
+                        color:var(--text);font-family:monospace;font-size:0.88rem" />
+        </div>
+        <div style="display:flex;align-items:flex-end;padding-bottom:2px">
+          <span style="font-size:0.78rem;color:var(--muted)">
+            rigctld must be running:<br>
+            <code>rigctld -m &lt;model&gt; -r &lt;port&gt; -s 19200</code>
+          </span>
+        </div>
+      </div>
+      <div class="alert alert-info" style="margin-top:10px;font-size:0.82rem">
+        <strong>CI-V / CAT radios</strong> (Xiegu G90, Icom IC-7300 etc.) —
+        use <strong>CAT</strong> PTT with the radio's USB serial port and Hamlib model.
+        <br>
+        <strong>DigiRig:</strong> select <code>/dev/ttyUSB0</code> and
+        use <strong>RTS</strong> PTT. Audio goes to <code>plughw:N,0</code> automatically.
+        <br>
+        <em>Note: Radios with built-in CM108 USB audio (Xiegu X6100) are not
+        supported — they require PulseAudio which conflicts with reliable AX.25.</em>
+      </div>
+      <input type="hidden" id="dw-hf-alsa-device" value="" />
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-secondary btn-sm"
+                onclick="dwTestPTT('hf')">🔊 Test PTT (HF)</button>
+        <button class="btn btn-secondary btn-sm"
+                onclick="dwCheckAudio('hf')">🎙️ Check RX (HF)</button>
+      </div>
+      <div class="status-row">
+        <div class="dot dot-idle" id="hf-test-dot"></div>
+        <span id="hf-test-status">—</span>
+      </div>
+    </div>
+
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn btn-purple" id="dw-apply-btn"
+              onclick="applyDirewolf()">
+        ⚙ Apply Direwolf Config &amp; Restart
+      </button>
+    </div>
+    <div id="dw-alert"></div>
+
+    <!-- ── Audio Level Control ──────────────────────────────────── -->
+    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+      <div style="font-size:0.82rem;font-weight:700;color:var(--muted);
+                  text-transform:uppercase;letter-spacing:0.05em;
+                  margin-bottom:10px">Audio Levels</div>
+      <div class="alert alert-info" style="font-size:0.82rem;margin-bottom:10px">
+        Direwolf reports healthy audio at level <strong>50</strong> on its meter.
+        If you see <em>"Audio input level is too high"</em> in the Direwolf log,
+        reduce RX below 40%. If audio is distorted or a carrier with no tones,
+        the input is clipping — reduce RX first.
+      </div>
+      <div class="two-col">
+        <div>
+          <label>RX Input Level (Capture) <span id="rx-pct-label">{{ settings.direwolf_rx_pct or 40 }}%</span></label>
+          <input type="range" id="dw-rx-pct" min="10" max="90"
+                 value="{{ settings.direwolf_rx_pct or 40 }}"
+                 oninput="document.getElementById('rx-pct-label').textContent=this.value+'%'"
+                 style="width:100%;accent-color:var(--accent)" />
+        </div>
+        <div>
+          <label>TX Output Level (Playback) <span id="tx-pct-label">{{ settings.direwolf_tx_pct or 70 }}%</span></label>
+          <input type="range" id="dw-tx-pct" min="10" max="90"
+                 value="{{ settings.direwolf_tx_pct or 70 }}"
+                 oninput="document.getElementById('tx-pct-label').textContent=this.value+'%'"
+                 style="width:100%;accent-color:var(--blue)" />
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-secondary btn-sm" onclick="dwSetLevels()">
+          🎚 Set Audio Levels
+        </button>
+      </div>
+      <div id="dw-levels-status" style="font-size:0.82rem;margin-top:6px;color:var(--muted)"></div>
+    </div>
+
+    <!-- Diagnostics — collapsed by default -->
+    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+      <div style="font-size:0.82rem;font-weight:700;color:var(--muted);
+                  text-transform:uppercase;letter-spacing:0.05em;
+                  margin-bottom:10px">Diagnostics</div>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn btn-secondary btn-sm" onclick="dwShowConf()">
+          📄 View Active Config
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="dwShowLog()">
+          📋 View Direwolf Log
+        </button>
+      </div>
+      <div id="dw-diag-box"
+           style="display:none;margin-top:10px;
+                  background:var(--bg);border:1px solid var(--border);
+                  border-radius:6px;padding:10px;
+                  font-family:monospace;font-size:0.78rem;
+                  color:#9ebc9e;white-space:pre-wrap;word-break:break-all;
+                  max-height:280px;overflow-y:auto">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Mesh Sync (hub only) ─────────────────────────────── -->
+  <div class="card {% if settings.role != 'hub' %}hidden{% endif %}"
+       id="mesh-card">
+    <h2>
+      Mesh Sync
+      <span class="hub-badge">Hub only</span>
+    </h2>
+
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:14px">
+      Automatically synchronise messages and hub files with other HF-256
+      hub stations over TCP (port 14257). All hubs must share the same
+      network key. Sync runs every 5 minutes and can be triggered
+      manually below.
+    </p>
+
+    <!-- Add peer -->
+    <label>Add Peer Hub Address</label>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="peer-input"
+             placeholder="192.168.1.20  or  hub.example.net">
+      <button class="btn btn-secondary" style="white-space:nowrap"
+              onclick="addMeshPeer()">Add Peer</button>
+    </div>
+
+    <!-- Peer list -->
+    <div class="peer-list" id="peer-list">
+      <div class="peer-empty" id="peer-empty">No peers configured</div>
+    </div>
+
+    <div id="mesh-alert"></div>
+
+    <label style="margin-top:16px">Sync Interval</label>
+    <div style="display:flex;align-items:center;gap:10px">
+      <input type="number" id="mesh-interval" class="num-input"
+             min="60" max="3600" step="60"
+             value="{{ settings.mesh_sync_interval or 300 }}">
+      <span style="color:var(--muted);font-size:0.88rem">seconds (60–3600)</span>
+    </div>
+  </div>
+
+  <!-- ── Session Limits (hub only) ────────────────────────── -->
+  <div class="card {% if settings.role != 'hub' %}hidden{% endif %}"
+       id="session-card">
+    <h2>
+      Session Limits
+      <span class="hub-badge">Hub only</span>
+    </h2>
+
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:14px">
+      Controls how many spokes can connect simultaneously and how quickly
+      idle or unauthenticated sessions are evicted. Changes take effect
+      on next portal restart.
+    </p>
+
+    <div class="two-col">
+      <div>
+        <label>Max Simultaneous Sessions</label>
+        <input type="number" id="max-sessions" class="num-input"
+               min="1" max="50" step="1"
+               value="{{ settings.max_sessions or 10 }}">
+        <span style="color:var(--muted);font-size:0.8rem">1–50 spokes</span>
+      </div>
+      <div>
+        <label>Idle Timeout</label>
+        <input type="number" id="idle-timeout" class="num-input"
+               min="30" max="3600" step="30"
+               value="{{ settings.session_idle_timeout or 300 }}">
+        <span style="color:var(--muted);font-size:0.8rem">seconds (30–3600)</span>
+      </div>
+    </div>
+
+    <div style="margin-top:14px">
+      <label>Unauthenticated Session Timeout</label>
+      <input type="number" id="auth-timeout" class="num-input"
+             min="10" max="600" step="10"
+             value="{{ settings.session_auth_timeout or 120 }}">
+      <span style="color:var(--muted);font-size:0.8rem">
+        seconds — sessions that never /auth are evicted after this time
+      </span>
+    </div>
+  </div>
+
+  <!-- ── Save ─────────────────────────────────────────────── -->
   <div class="card">
     <h2>Save Changes</h2>
     <p style="color:var(--muted);font-size:0.88rem;margin-bottom:14px">
-      Saves callsign, role, and encryption settings.
-      The HF-256 service will restart to apply changes.
+      Saves callsign, role, encryption, session limits, and mesh
+      sync settings. The HF-256 service restarts to apply changes.
+      Direwolf config is applied separately with the
+      ⚙ Apply button above.
     </p>
     <div class="btn-row">
       <button class="btn btn-primary" id="save-btn" onclick="saveSettings()">
@@ -310,55 +632,73 @@
     <div id="save-alert"></div>
   </div>
 
-  <div style="text-align:center;color:var(--muted);font-size:0.78rem;
-              margin-top:8px">
-    HF-256 &bull; {{ system_info.hostname }}
-    &bull; {{ system_info.ip_address }}
+  <div style="text-align:center;color:var(--muted);font-size:0.78rem;margin-top:8px">
+    HF-256 MSA &bull; {{ system_info.hostname }} &bull; {{ system_info.ip_address }}
   </div>
 </div>
 
 <script>
+// ── State ─────────────────────────────────────────────────────────────
 let selectedRole = "{{ settings.role or '' }}";
 let wifiMode     = "{{ settings.wifi_mode or 'ap' }}";
 
+// Pre-populate Direwolf dropdowns with saved values when the page loads
+const savedDwVhfCard   = {{ settings.direwolf_vhf_card   | tojson }};
+const savedDwVhfSerial = {{ (settings.direwolf_vhf_serial or '') | tojson }};
+const savedDwHfCard    = {{ settings.direwolf_hf_card    | tojson }};
+const savedDwHfSerial  = {{ (settings.direwolf_hf_serial or '') | tojson }};
+let dwSerialPorts = [];
+let dwAudioCards  = [];
+
+// ── Role selection ────────────────────────────────────────────────────
 function selectRole(role) {
   selectedRole = role;
   document.getElementById("role").value = role;
-  document.getElementById("role-hub").classList.toggle(
-    "selected", role === "hub"
-  );
-  document.getElementById("role-spoke").classList.toggle(
-    "selected", role === "spoke"
-  );
-  document.getElementById("hub-address-row").classList.toggle(
-    "hidden", role !== "spoke"
-  );
+  document.getElementById("role-hub").classList.toggle("selected", role === "hub");
+  document.getElementById("role-spoke").classList.toggle("selected", role === "spoke");
+  document.getElementById("hub-address-row").classList.toggle("hidden", role !== "spoke");
+
+  // Direwolf is needed by both hub and spoke — always visible
+  // Only mesh sync and session limits are hub-only
+  ["mesh-card", "session-card"].forEach(id => {
+    document.getElementById(id).classList.toggle("hidden", role !== "hub");
+  });
+
+  // Swap the role-context hint inside the Direwolf card
+  const hintHub   = document.getElementById("dw-role-hint-hub");
+  const hintSpoke = document.getElementById("dw-role-hint-spoke");
+  if (hintHub)   hintHub.style.display   = (role === "hub")   ? "" : "none";
+  if (hintSpoke) hintSpoke.style.display = (role === "spoke") ? "" : "none";
 }
 
+// ── WiFi ──────────────────────────────────────────────────────────────
 function setWifiMode(mode) {
   wifiMode = mode;
-  document.getElementById("btn-ap").classList.toggle(
-    "active", mode === "ap"
-  );
-  document.getElementById("btn-client").classList.toggle(
-    "active", mode === "client"
-  );
-  document.getElementById("ap-settings").classList.toggle(
-    "hidden", mode !== "ap"
-  );
-  document.getElementById("client-settings").classList.toggle(
-    "hidden", mode !== "client"
-  );
+  document.getElementById("btn-ap").classList.toggle("active", mode === "ap");
+  document.getElementById("btn-client").classList.toggle("active", mode === "client");
+  document.getElementById("ap-settings").classList.toggle("hidden", mode !== "ap");
+  document.getElementById("client-settings").classList.toggle("hidden", mode !== "client");
 }
 
-function showAlert(containerId, type, msg) {
+function showAlert(id, type, msg) {
   const cls = type === "ok"   ? "alert-ok"   :
               type === "err"  ? "alert-err"  :
               type === "warn" ? "alert-warn" : "alert-info";
-  document.getElementById(containerId).innerHTML =
+  document.getElementById(id).innerHTML =
     '<div class="alert ' + cls + '">' + msg + '</div>';
 }
 
+function dwDot(channel, state, msg) {
+  // channel: 'vhf' | 'hf' | 'dw'
+  const dot = document.getElementById(channel + "-" +
+    (channel === "dw" ? "dot" : "test-dot"));
+  const txt = document.getElementById(channel + "-" +
+    (channel === "dw" ? "status-text" : "test-status"));
+  if (dot) dot.className = "dot dot-" + state;
+  if (txt) txt.textContent = msg;
+}
+
+// ── Encryption ────────────────────────────────────────────────────────
 function generateKey() {
   fetch("/api/key/generate", {method: "POST"})
     .then(r => r.json())
@@ -383,8 +723,7 @@ function exportKey() {
       if (d.success) {
         document.getElementById("key-display").textContent = d.key_b64;
         showAlert("key-alert", "info",
-          "Key shown above. Copy it to other stations using " +
-          "Import Key.");
+          "Key shown above. Copy it to other stations using Import Key.");
       } else {
         showAlert("key-alert", "err", d.error);
       }
@@ -396,16 +735,14 @@ function importKey() {
   const key = document.getElementById("import-key-input").value.trim();
   if (!key) return showAlert("key-alert", "warn", "Paste a key first");
   fetch("/api/key/import", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
+    method: "POST", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({key_b64: key})
   })
   .then(r => r.json())
   .then(d => {
     if (d.success) {
       document.getElementById("key-dot").className = "dot dot-ok";
-      document.getElementById("key-status-text").textContent =
-        "Key imported successfully";
+      document.getElementById("key-status-text").textContent = "Key imported";
       document.getElementById("import-key-input").value = "";
       showAlert("key-alert", "ok", d.message);
     } else {
@@ -415,28 +752,23 @@ function importKey() {
   .catch(e => showAlert("key-alert", "err", "Error: " + e));
 }
 
+// ── WiFi helpers ──────────────────────────────────────────────────────
 function applyAP() {
   const ssid = document.getElementById("ap-ssid").value.trim();
   const pw   = document.getElementById("ap-password").value;
   if (!ssid) return showAlert("wifi-alert", "err", "SSID required");
   if (pw.length < 8)
-    return showAlert("wifi-alert", "err",
-      "AP password must be at least 8 characters");
+    return showAlert("wifi-alert", "err", "AP password must be at least 8 characters");
   if (!confirm("Switch to AP mode: " + ssid + "?")) return;
-
-  showAlert("wifi-alert", "info",
-    '<span class="spinner"></span> Applying...');
+  showAlert("wifi-alert", "info", '<span class="spinner"></span> Applying...');
   fetch("/api/wifi-mode", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({mode: "ap", ssid, password: pw})
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({mode:"ap", ssid, password: pw})
   })
   .then(r => r.json())
   .then(d => {
-    if (d.success)
-      showAlert("wifi-alert", "ok", "AP mode active: " + ssid);
-    else
-      showAlert("wifi-alert", "err", d.error || "Failed");
+    if (d.success) showAlert("wifi-alert", "ok", "AP mode active: " + ssid);
+    else           showAlert("wifi-alert", "err", d.error || "Failed");
   })
   .catch(e => showAlert("wifi-alert", "err", "Error: " + e));
 }
@@ -447,30 +779,342 @@ function joinNetwork() {
   if (!ssid) return showAlert("wifi-alert", "err", "SSID required");
   if (!confirm("Join " + ssid + "? The AP will be disabled.\n" +
                "Check the PiTFT for the new IP address.")) return;
-
   showAlert("wifi-alert", "info",
     '<span class="spinner"></span> Connecting to ' + ssid + '...');
   fetch("/api/wifi-mode", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({mode: "client", ssid, password: pw})
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({mode:"client", ssid, password: pw})
   })
   .then(r => r.json())
   .then(d => {
     if (d.success) {
       const ip = d.new_ip || "check PiTFT display";
       showAlert("wifi-alert", "ok",
-        "Connected to " + ssid + ". " +
-        "New IP: " + ip + "<br>" +
-        "Portal now at: <a href='http://" + ip + "' " +
-        "style='color:var(--blue)'>http://" + ip + "</a>");
+        "Connected to " + ssid + ". New IP: " + ip + "<br>" +
+        "Portal now at: <a href='http://" + ip + "' style='color:var(--blue)'>" +
+        "http://" + ip + "</a>");
     } else {
-      showAlert("wifi-alert", "err",
-        d.error || "Connection failed — check SSID and password");
+      showAlert("wifi-alert", "err", d.error || "Connection failed");
     }
   })
   .catch(e => showAlert("wifi-alert", "err", "Error: " + e));
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// Direwolf AX.25
+// ══════════════════════════════════════════════════════════════════════
+
+function dwLoadStatus() {
+  fetch("/api/direwolf/status")
+    .then(r => r.json())
+    .then(d => {
+      if (d.running && d.connected) {
+        dwDot("dw", "ok", "Direwolf running and connected to portal");
+      } else if (d.running) {
+        dwDot("dw", "warn",
+          "Direwolf running — not yet connected (restart portal to attach)");
+      } else {
+        dwDot("dw", "err",
+          "Direwolf not running — apply config below to start it");
+      }
+    })
+    .catch(() => dwDot("dw", "idle", "Could not reach status API"));
+}
+
+function dwScanHardware() {
+  dwDot("dw", "idle", "Scanning...");
+  fetch("/api/detect-hardware")
+    .then(r => r.json())
+    .then(data => {
+      dwSerialPorts = data.serial_ports || [];
+      dwAudioCards  = data.audio_devices || [];
+
+      // Populate all four dropdowns
+      ["dw-vhf-card", "dw-hf-card"].forEach(id => {
+        const sel = document.getElementById(id);
+        const prev = sel.value;
+        sel.innerHTML = '<option value="">— disabled —</option>';
+        dwAudioCards.forEach(d => {
+          const opt = document.createElement("option");
+          opt.value = d.card;
+          opt.textContent = "Card " + d.card + ": " + d.name;
+          sel.appendChild(opt);
+        });
+        if (prev) sel.value = prev;
+      });
+
+      ["dw-vhf-serial", "dw-hf-serial"].forEach(id => {
+        const sel = document.getElementById(id);
+        const prev = sel.value;
+        sel.innerHTML = '<option value="">— VOX / none —</option>';
+        dwSerialPorts.forEach(p => {
+          const opt = document.createElement("option");
+          opt.value = p.port;
+          opt.textContent = p.port + (p.description ? " — " + p.description : "");
+          sel.appendChild(opt);
+        });
+        if (prev) sel.value = prev;
+      });
+
+      // Restore saved values after scan
+      if (savedDwVhfCard !== null)
+        document.getElementById("dw-vhf-card").value = String(savedDwVhfCard);
+      if (savedDwVhfSerial)
+        document.getElementById("dw-vhf-serial").value = savedDwVhfSerial;
+      if (savedDwHfCard !== null)
+        document.getElementById("dw-hf-card").value = String(savedDwHfCard);
+      if (savedDwHfSerial)
+        document.getElementById("dw-hf-serial").value = savedDwHfSerial;
+
+      dwDot("dw", "ok",
+        data.serial_ports.length + " serial port(s), " +
+        data.audio_devices.length + " audio card(s) found");
+    })
+    .catch(e => dwDot("dw", "err", "Scan failed: " + e));
+}
+
+function dwTestPTT(channel) {
+  const serialSel = document.getElementById("dw-" + channel + "-serial");
+  const pttSel    = document.getElementById("dw-" + channel + "-ptt");
+  const radioId   = "digirig-mobile"; // best generic for RTS PTT test
+  const port      = serialSel ? serialSel.value : "";
+  if (!port) {
+    dwDot(channel, "warn", "Select a serial port first");
+    return;
+  }
+  if (!confirm("This will briefly key your transmitter. Continue?")) return;
+  dwDot(channel, "idle", "Testing PTT...");
+  fetch("/api/test-ptt", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({port, radio_id: radioId})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) dwDot(channel, "ok", d.message || "PTT OK");
+    else           dwDot(channel, "err", "PTT failed: " + d.error);
+  })
+  .catch(e => dwDot(channel, "err", "Error: " + e));
+}
+
+function dwCheckAudio(channel) {
+  const cardSel = document.getElementById("dw-" + channel + "-card");
+  const card    = cardSel ? cardSel.value : "";
+  if (card === "") {
+    dwDot(channel, "warn", "Select an audio card first");
+    return;
+  }
+  dwDot(channel, "idle", "Sampling 1 second...");
+  fetch("/api/audio-level/check/" + card)
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        const db   = d.rx_db || -60;
+        const good = db > -50;
+        dwDot(channel, good ? "ok" : "warn",
+          "RX level: " + db.toFixed(1) + " dB " +
+          (good ? "(signal present)" : "(quiet / no signal)"));
+      } else {
+        dwDot(channel, "err", "Error: " + d.error);
+      }
+    })
+    .catch(e => dwDot(channel, "err", "Error: " + e));
+}
+
+function dwSetLevels() {
+  const rx  = document.getElementById("dw-rx-pct").value;
+  const tx  = document.getElementById("dw-tx-pct").value;
+  const sta = document.getElementById("dw-levels-status");
+  sta.textContent = "Setting levels...";
+  sta.style.color = "var(--muted)";
+  fetch("/api/direwolf/set-levels", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({rx_pct: parseInt(rx), tx_pct: parseInt(tx)})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.ok) {
+      sta.textContent = "✓ Levels set: " + (d.results || []).join("; ");
+      sta.style.color = "var(--accent)";
+    } else {
+      sta.textContent = "✗ " + (d.error || "Failed");
+      sta.style.color = "var(--red)";
+    }
+  })
+  .catch(e => {
+    sta.textContent = "✗ Error: " + e;
+    sta.style.color = "var(--red)";
+  });
+}
+
+function dwShowDiag(content) {
+  const box = document.getElementById("dw-diag-box");
+  box.textContent = content;
+  box.style.display = "block";
+  box.scrollTop = 0;
+}
+
+function dwShowConf() {
+  const box = document.getElementById("dw-diag-box");
+  box.textContent = "Loading /etc/direwolf/direwolf.conf ...";
+  box.style.display = "block";
+  fetch("/api/direwolf/conf")
+    .then(r => r.json())
+    .then(d => dwShowDiag(d.content || "(empty)"))
+    .catch(e => dwShowDiag("Error: " + e));
+}
+
+function dwShowLog() {
+  const box = document.getElementById("dw-diag-box");
+  box.textContent = "Loading Direwolf journal ...";
+  box.style.display = "block";
+  fetch("/api/direwolf/logs?lines=60")
+    .then(r => r.json())
+    .then(d => {
+      dwShowDiag(d.content || "(no entries)");
+      // Scroll to bottom so newest entries are visible
+      box.scrollTop = box.scrollHeight;
+    })
+    .catch(e => dwShowDiag("Error: " + e));
+}
+
+function applyDirewolf() {
+  const btn     = document.getElementById("dw-apply-btn");
+  const vhfCard = document.getElementById("dw-vhf-card").value;
+  const hfCard  = document.getElementById("dw-hf-card").value;
+
+  if (!vhfCard && !hfCard) {
+    showAlert("dw-alert", "err",
+      "Enable at least one channel (VHF or HF) by selecting an audio card");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Applying...';
+
+  const payload = {
+    direwolf_vhf_card:   vhfCard !== "" ? parseInt(vhfCard) : null,
+    direwolf_vhf_serial: document.getElementById("dw-vhf-serial").value,
+    direwolf_vhf_ptt:    document.getElementById("dw-vhf-ptt").value,
+    direwolf_vhf_baud:   parseInt(document.getElementById("dw-vhf-baud").value),
+    direwolf_hf_card:    hfCard !== "" ? parseInt(hfCard) : null,
+    direwolf_hf_serial:       document.getElementById("dw-hf-serial").value,
+    direwolf_hf_ptt:          document.getElementById("dw-hf-ptt").value,
+    direwolf_hf_hamlib_model: parseInt(document.getElementById("dw-hf-hamlib")?.value) || null,
+    direwolf_hf_alsa_device:  (document.getElementById("dw-hf-alsa-device")?.value || "").trim(),
+  };
+
+  fetch("/api/direwolf/setup", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(d => {
+    btn.disabled = false;
+    btn.innerHTML = "⚙ Apply Direwolf Config & Restart";
+    if (d.ok) {
+      showAlert("dw-alert", "ok", "✓ " + (d.message || "Direwolf configured and restarted"));
+      dwLoadStatus();
+    } else {
+      showAlert("dw-alert", "err", "✗ " + (d.message || "Direwolf setup failed"));
+    }
+  })
+  .catch(e => {
+    btn.disabled = false;
+    btn.innerHTML = "⚙ Apply Direwolf Config & Restart";
+    showAlert("dw-alert", "err", "Error: " + e);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Mesh Sync
+// ══════════════════════════════════════════════════════════════════════
+
+function loadMeshPeers() {
+  fetch("/api/mesh/peers")
+    .then(r => r.json())
+    .then(d => renderPeerList(d.peers || []))
+    .catch(() => {});
+}
+
+function renderPeerList(peers) {
+  const list  = document.getElementById("peer-list");
+  const empty = document.getElementById("peer-empty");
+  // Remove old peer rows (keep the empty placeholder)
+  list.querySelectorAll(".peer-row").forEach(el => el.remove());
+
+  if (peers.length === 0) {
+    empty.style.display = "";
+    return;
+  }
+  empty.style.display = "none";
+
+  peers.forEach(addr => {
+    const row = document.createElement("div");
+    row.className = "peer-row";
+    row.innerHTML =
+      '<span class="peer-addr">' + addr + '</span>' +
+      '<button class="btn btn-secondary btn-sm" ' +
+        'onclick="syncNow(\'' + addr + '\')">Sync Now</button>' +
+      '<button class="btn btn-danger btn-sm" ' +
+        'onclick="removeMeshPeer(\'' + addr + '\')">✕</button>';
+    list.appendChild(row);
+  });
+}
+
+function addMeshPeer() {
+  const addr = document.getElementById("peer-input").value.trim();
+  if (!addr) return showAlert("mesh-alert", "warn", "Enter a peer address first");
+  fetch("/api/mesh/peers", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({action:"add", address: addr})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.ok) {
+      document.getElementById("peer-input").value = "";
+      renderPeerList(d.peers || []);
+      showAlert("mesh-alert", "ok", "Peer added: " + addr);
+    } else {
+      showAlert("mesh-alert", "err", d.error || "Failed to add peer");
+    }
+  })
+  .catch(e => showAlert("mesh-alert", "err", "Error: " + e));
+}
+
+function removeMeshPeer(addr) {
+  if (!confirm("Remove peer: " + addr + "?")) return;
+  fetch("/api/mesh/peers", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({action:"remove", address: addr})
+  })
+  .then(r => r.json())
+  .then(d => {
+    renderPeerList(d.peers || []);
+    showAlert("mesh-alert", "ok", "Peer removed: " + addr);
+  })
+  .catch(e => showAlert("mesh-alert", "err", "Error: " + e));
+}
+
+function syncNow(addr) {
+  showAlert("mesh-alert", "info",
+    '<span class="spinner"></span> Syncing with ' + addr + '...');
+  fetch("/api/mesh/sync-now", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({address: addr})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.ok) showAlert("mesh-alert", "ok",
+      "Sync started with " + addr + " — check logs for result");
+    else showAlert("mesh-alert", "err", d.error || "Sync failed");
+  })
+  .catch(e => showAlert("mesh-alert", "err", "Error: " + e));
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Save Settings  (includes new session and mesh fields)
+// ══════════════════════════════════════════════════════════════════════
 
 function saveSettings() {
   const callsign = document.getElementById("callsign").value.trim();
@@ -479,8 +1123,7 @@ function saveSettings() {
   if (!callsign)
     return showAlert("save-alert", "err", "Callsign required");
   if (!role)
-    return showAlert("save-alert", "err",
-      "Select a station role (Hub or Spoke)");
+    return showAlert("save-alert", "err", "Select a station role (Hub or Spoke)");
   if (callsign === "N0CALL")
     return showAlert("save-alert", "warn",
       "Please set your actual callsign before saving");
@@ -492,29 +1135,31 @@ function saveSettings() {
   const data = {
     callsign,
     role,
-    hub_address:        document.getElementById("hub-address").value.trim(),
-    encryption_enabled: document.getElementById("enc-enabled").checked,
-    wifi_mode:          wifiMode,
-    ap_ssid:            document.getElementById("ap-ssid").value.trim(),
-    ap_password:        document.getElementById("ap-password").value,
-    client_ssid:        document.getElementById("client-ssid").value.trim(),
-    client_password:    document.getElementById("client-password").value
+    hub_address:           document.getElementById("hub-address").value.trim(),
+    encryption_enabled:    document.getElementById("enc-enabled").checked,
+    wifi_mode:             wifiMode,
+    ap_ssid:               document.getElementById("ap-ssid").value.trim(),
+    ap_password:           document.getElementById("ap-password").value,
+    client_ssid:           document.getElementById("client-ssid").value.trim(),
+    client_password:       document.getElementById("client-password").value,
+    // ── v0.1.0 session limits (hub only) ──
+    max_sessions:          parseInt(document.getElementById("max-sessions").value)   || 10,
+    session_idle_timeout:  parseInt(document.getElementById("idle-timeout").value)   || 300,
+    session_auth_timeout:  parseInt(document.getElementById("auth-timeout").value)   || 120,
+    // ── mesh interval (hub only) ──
+    mesh_sync_interval:    parseInt(document.getElementById("mesh-interval").value)  || 300,
   };
 
   fetch("/api/settings", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
+    method: "POST", headers: {"Content-Type":"application/json"},
     body: JSON.stringify(data)
   })
   .then(r => r.json())
   .then(d => {
     btn.disabled = false;
     btn.innerHTML = "💾 Save Settings";
-    if (d.success) {
-      showAlert("save-alert", "ok", d.message);
-    } else {
-      showAlert("save-alert", "err", d.error || "Save failed");
-    }
+    if (d.success) showAlert("save-alert", "ok", d.message);
+    else           showAlert("save-alert", "err", d.error || "Save failed");
   })
   .catch(e => {
     btn.disabled = false;
@@ -522,7 +1167,18 @@ function saveSettings() {
     showAlert("save-alert", "err", "Error: " + e);
   });
 }
+
+// ── Boot ──────────────────────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+  // Direwolf status and hardware scan applies to all roles (hub and spoke)
+  dwLoadStatus();
+  dwScanHardware();
+
+  // Mesh peers only relevant for hub
+  if (selectedRole === "hub") {
+    loadMeshPeers();
+  }
+});
 </script>
 </body>
 </html>
-

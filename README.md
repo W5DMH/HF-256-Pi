@@ -1,31 +1,49 @@
-# HF-256
+# HF-256 MSA
 
-**Encrypted store-and-forward messaging over HF radio — in a Raspberry Pi appliance.**
+**Multi-session encrypted radio BBS — HF, VHF, and internet — in a Raspberry Pi appliance.**
 
-HF-256 is a self-contained communication system that lets amateur radio operators exchange encrypted messages, files, and live chat across HF radio links. It runs entirely on a Raspberry Pi and is operated through a browser — no keyboard, no monitor, no command line required in normal use.
+HF-256 MSA (Multi-Session Architecture) is a self-contained communication system that lets amateur radio operators exchange encrypted messages, files, and live chat across HF radio, VHF radio, and internet links — simultaneously. It runs entirely on a Raspberry Pi and is operated through a browser — no keyboard, no monitor, no command line required in normal use.
 
 ---
 
-![HF-256 Console](images/console-screenshot.png)
+## What Changed in v0.1.0
+
+| Feature | Alpha 0.0.6 | Alpha 0.1.0 (MSA) |
+|---------|-------------|-------------------|
+| Simultaneous spoke connections | 1 | Up to 10 |
+| VHF AX.25 (Direwolf 9600 baud) | ✗ | ✓ |
+| HF AX.25 (Direwolf 300 baud) | ✗ | ✓ |
+| Chat routing | Spoke ↔ Hub only | Broadcast to all connected spokes |
+| Hub broadcast | ✗ | `/wall` + sidebar broadcast bar |
+| Session panel | ✗ | Live spoke list with kick button |
+| Hub-to-hub mesh sync | ✗ | TCP port 14257 + HF path planned |
+| Dual soundcard (VHF + HF) | ✗ | ✓ simultaneous |
+| TCP server | Single-client | Multi-client asyncio |
+
+---
 
 ## What HF-256 Does
 
-HF-256 creates a private, encrypted radio network between a **hub station** and one or more **spoke stations**. Every message, file, and chat is protected with AES-256-GCM encryption using a shared network key that only your group holds.
+HF-256 MSA creates a private, encrypted radio BBS between a **hub station** and multiple **spoke stations**. Every message, file, and chat is protected with AES-256-GCM encryption using a shared network key that only your group holds.
 
 **You can:**
-- Exchange live chat messages over HF radio
-- Send store-and-forward messages to stations that are currently off the air
-- Distribute files (emergency procedures, net schedules, maps) to field stations
-- Run a hub station that holds messages and files until a field unit checks in
-- Operate over TCP/IP (internet or LAN) for testing or when radio is not needed
+- Exchange live chat with all connected stations simultaneously — the hub broadcasts every message to all authenticated spokes
+- Send store-and-forward messages to stations that are currently off the air; the hub delivers them when the station next checks in
+- Distribute files (emergency procedures, net schedules, maps) to any field station on any transport
+- Connect up to 10 spokes at the same time across any mix of TCP, VHF AX.25, HF AX.25, and ARDOP transports
+- Run a hub that automatically accepts ARDOP, Direwolf, and TCP connections without operator intervention
+- Synchronise two hub stations with each other over the internet (mesh sync)
 
 **Supported transports:**
-| Transport | Use case |
-|-----------|----------|
-| FreeDV HF | HF radio — fully open-source modem, no licence fees |
-| ARDOP FM  | VHF/UHF FM radio — short range, fast |
-| TCP | Internet or LAN — for testing and fixed infrastructure |
-| Hybrid Mode | Hub only — TCP server runs alongside FreeDV or ARDOP FM simultaneously |
+
+| Transport | Baud rate | Use case |
+|-----------|-----------|---------|
+| ARDOP HF | ~200–1000 bps | HF SSB — long-distance, adaptive rate |
+| ARDOP FM | ~2000 bps | VHF/UHF FM — local/regional, fast |
+| VHF AX.25 (Direwolf) | 9600 baud | VHF packet — G3RUH FSK, multiple sessions |
+| HF AX.25 (Direwolf) | 300 baud | HF packet — Bell 202 AFSK, multiple sessions |
+| TCP | Network speed | Internet or LAN — testing and fixed infrastructure |
+| Hybrid Mode | Mixed | Hub only — any combination of the above simultaneously |
 
 ---
 
@@ -33,296 +51,287 @@ HF-256 creates a private, encrypted radio network between a **hub station** and 
 
 Each HF-256 node is a **Raspberry Pi 4** running the HF-256 software. Any station on your network can be reached with a phone, tablet, or laptop browser — the Pi serves the interface on port 80.
 
-**Supported radios:**
+### Single-radio setup (all modes)
+
+One USB audio interface handles everything — ARDOP HF, ARDOP FM, VHF AX.25, or HF AX.25:
 
 | Radio | Bands | Audio | PTT | Notes |
 |-------|-------|-------|-----|-------|
 | DigiRig Mobile | Any | External USB | RTS | Plug-and-play with most transceivers |
 | Xiegu X6100 | HF | Built-in USB | CI-V CAT | Portable SDR-based HF transceiver |
-| Xiegu G90 | HF | External USB | CI-V CAT | Requires DigiRig or similar audio interface |
-| Icom IC-705 | HF/VHF/UHF | Built-in USB | CI-V CAT | Portable — excellent for ARDOP FM on VHF/UHF |
+| Xiegu G90 | HF | External USB | CI-V CAT | Requires DigiRig or similar |
+| Icom IC-705 | HF/VHF/UHF | Built-in USB | CI-V CAT | Excellent for ARDOP FM on VHF/UHF |
 | Icom IC-7300 | HF/6m | Built-in USB | CI-V CAT | Popular SDR-based HF base station |
 | Icom IC-7100 | HF/VHF/UHF | Built-in USB | CI-V CAT | HF/VHF/UHF base station |
-| Icom IC-9700 | VHF/UHF/SHF | Built-in USB | CI-V CAT | Ideal for ARDOP FM on 2m, 70cm, 23cm |
+| Icom IC-9700 | VHF/UHF/SHF | Built-in USB | CI-V CAT | Ideal for VHF AX.25 9600 baud |
 
-Radios with built-in USB audio connect directly to the Pi with a single USB cable. Radios without built-in audio require an external USB audio interface such as the DigiRig Mobile.
+### Dual-radio setup (VHF + HF simultaneously)
+
+Hub stations can run **two radios at the same time** — one for VHF packet (9600 baud) and one for HF packet (300 baud) — using two separate DigiRig Mobile adapters:
+
+```
+Pi USB port 1 ── DigiRig #1 ── 2m FM radio     (Direwolf port 0, 9600 baud)
+Pi USB port 2 ── DigiRig #2 ── HF SSB radio    (Direwolf port 1, 300 baud)
+```
+
+Both radios are controlled by a single Direwolf process. ARDOP and TCP can run alongside Direwolf simultaneously via Hybrid Mode.
 
 ---
 
 ## The PiTFT Display
 
-![PiTFT Display](images/tftdisplay.jpg)
-
-The HF-256 Pi appliance uses an **Adafruit Mini PiTFT 1.3" 240×240 colour display** mounted directly on the Pi's GPIO header. It provides at-a-glance status without needing a browser and is the primary way to operate the two physical controls on the unit.
-
-### What the display shows
-
-The display shows the current operating mode and network status — including the Pi's IP address, whether it is in hotspot mode or connected to a Wi-Fi network, and the station role (hub or spoke). This is updated dynamically as the network state changes.
-
-When the IP address is shown you can type it directly into any browser on the same network to reach the HF-256 web interface.
+The HF-256 Pi appliance uses an **Adafruit Mini PiTFT 1.3" 240×240 colour display** mounted directly on the Pi's GPIO header. It shows at-a-glance status including IP address, Wi-Fi mode, station role, and the number of active spoke sessions.
 
 ### Physical buttons
 
-The unit has two physical buttons. Their functions are:
-
 **Reset to Hotspot mode (both buttons, 10 seconds)**
-Hold **both buttons simultaneously for 10 seconds**. The display will confirm the reset. The Pi switches back to hotspot mode broadcasting the `HF256-N0CALL` network, allowing you to reconnect and reconfigure it. Use this if you have lost access to the web interface because the Pi joined a Wi-Fi network that is no longer available.
+Hold **both buttons simultaneously for 10 seconds**. The Pi switches back to hotspot mode and broadcasts the `HF256-N0CALL` network.
 
 **Graceful shutdown (bottom button, 10 seconds)**
-Hold the **bottom button for approximately 10 seconds** until the display shows **"Shutting down"**. Release the button. The Pi will complete a clean shutdown before cutting power. Always use this procedure rather than pulling the power — an unclean shutdown can corrupt the SD card.
-
-### When to use the buttons
-
-| Situation | Action |
-|-----------|--------|
-| Lost access to web interface — Wi-Fi changed | Hold both buttons 10s → reconnect to `HF256-N0CALL` |
-| Powering down the unit | Hold bottom button 10s → wait for "Shutting down" |
-| Normal operation | No button press needed — display shows current status |
+Hold the **bottom button for approximately 10 seconds** until the display shows **"Shutting down"**. Always use this procedure to avoid SD card corruption.
 
 ---
 
 ## Network Roles
 
 ### Hub Station
-The hub is the centre of the network. It runs continuously, listening for incoming connections from field stations. The hub:
-- Holds messages for stations that are not currently on the air
+The hub is the centre of the network. It runs continuously, listening for incoming connections from field stations on all enabled transports simultaneously. The hub:
+- Accepts connections from up to 10 spokes at the same time across any transport mix
+- Broadcasts live chat from any spoke to all other authenticated spokes
+- Holds messages for offline stations and delivers them on next check-in
 - Stores files available for download by any authenticated station
 - Authenticates connecting stations against a local user database
-- Does not require the operator to be present — it listens automatically
+- Can synchronise its message store and file library with other hub stations over the internet via mesh sync
 
 ### Spoke Station
 A spoke is a field unit that calls into the hub. The spoke operator:
-- Connects to the hub using `/connect <CALLSIGN>`
+- Selects a transport (TCP, ARDOP HF/FM, VHF AX.25, or HF AX.25)
+- Connects with `/connect <CALLSIGN>` or `/connect <IP>`
 - Authenticates with `/auth <password>`
-- Can chat live with the hub operator, send and retrieve messages, and download files
-- Disconnects when done — the hub holds any messages for the next check-in
+- Can chat live with the hub operator and all other authenticated spokes
+- Can send and retrieve store-and-forward messages and download files
+- Disconnects when done — the hub holds any incoming messages for the next check-in
 
 ---
 
 ## First-Time Setup
 
-When a HF-256 Pi is first powered on it has not yet been configured. It starts in **access point mode**, broadcasting its own Wi-Fi network so you can reach it from any phone, tablet, or laptop — no existing network or internet connection is required.
+When a HF-256 Pi is first powered on it starts in **access point mode**, broadcasting its own Wi-Fi network.
 
 **Step 1 — Connect to the HF-256 Wi-Fi hotspot**
 
-On your device, open Wi-Fi settings and connect to:
-
-- **Network name:** `HF256-N0CALL`
-- **Password:** `hf256setup`
-
-Once connected your device will be on the Pi's local network. No internet access will be available while connected to this hotspot — that is normal.
+| Network name | Password |
+|---|---|
+| `HF256-N0CALL` | `hf256setup` |
 
 **Step 2 — Open the setup page**
 
-Open a browser and go to either:
-
-- `http://hf256.local` — works on most phones, tablets, and modern computers
-- `http://192.168.4.1` — use this if hf256.local does not resolve
-
-The HF-256 setup wizard will load automatically.
+Browse to `http://hf256.local` or `http://192.168.4.1`
 
 **Step 3 — Select your radio and test hardware**
 
-Select your radio interface (DigiRig Mobile or Xiegu X6100). The wizard will detect the serial port and audio device. Use the **Test PTT** and **Check Audio Level** buttons to confirm your radio is correctly connected before proceeding. This is the time to sort out any cable or interface issues — getting hardware confirmed here saves troubleshooting later.
+Select your radio interface. Use the **Test PTT** and **Check Audio Level** buttons to confirm your radio is correctly connected.
 
 **Step 4 — Callsign and role**
-Enter your callsign and select whether this Pi will be a **Hub** or a **Spoke**.
+
+Enter your callsign and select **Hub** or **Spoke**.
 
 **Step 5 — Network key**
-All stations on your network must share the same AES-256 encryption key. Either generate a new key on the hub and distribute it, or paste in a key you have already received.
 
-When setup completes the Pi switches from hotspot mode to its normal operating mode. If you configured it to join an existing Wi-Fi network it will do so now — reconnect your device to your normal network and browse to the Pi's new address shown on the final setup screen. If no Wi-Fi was configured the Pi remains in hotspot mode and is always reachable at `192.168.4.1`.
+All stations must share the same AES-256 key. Generate a new key on the hub or paste one you have received.
+
+**Step 6 — Direwolf configuration (hub only, optional)**
+
+If running VHF and/or HF AX.25, open **Settings → Direwolf** after initial setup completes. Set the ALSA card number for each radio and the PTT serial port. Click **Apply** — the portal writes `/etc/direwolf/direwolf.conf` and starts the Direwolf service.
+
+**Step 7 — Mesh peers (hub only, optional)**
+
+Open **Settings → Mesh Peers** and add the IP address of any other hub you want to synchronise with. Sync runs automatically every 5 minutes.
 
 ---
 
 ## The Console
 
-The console is the main operating interface. Open it at `http://<pi-address>/console`.
+The console is the main operating interface at `http://<pi-address>/console`.
 
 ```
-┌─────────────────────────────────────────────────────┐
-│ HF-256   Status   Settings   Console    Ver Alpha 0.0.1 │
-├──────────────────┬──────────────────────────────────┤
-│ L3LFN │ FreeDV   │ ⬤ Connected to L3RHUB            │
-├──────────────────┴──────────────────────────────────┤
-│                                                      │
-│  ★ Session ready — L3LFN — key loaded               │
-│  ★ Transport: FreeDV HF                             │
-│  ★ ✓ Connected to L3RHUB                           │
-│  ★ ✓ Authenticated — Welcome L3LFN                 │
-│  → L3LFN: Hello from the field                     │
-│  ★ ✓ Message delivered to hub                      │
-│  ← L3RHUB: Copy that, standing by                  │
-│                                                      │
-├──────────────────────────────────────────────────────┤
-│ > type message or /command                          │
-└──────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ HF-256  Status  Settings  Console  Hub Files  Help    Alpha 0.1.0   │
+├──────────────────┬──────────────────────────────────────────────────┤
+│ N0HUB │ TCP │ ⬤ connected │ 🔒 Encrypted │ ✓ Auth │ ⬡ 3 sessions  │
+├──────────────────┴──────────────────────────────────────────────────┤
+│                                                                      │
+│  ★ Console connected                                                │
+│  ★ Hub mode — spokes connect on port 14256                          │
+│  ★ VHF AX.25 / HF AX.25 available if Direwolf is running           │
+│  ★ W1ABC authenticated [VHF_AX25]                                  │
+│  ← W1ABC: Hello from the field                                      │
+│  ← W2DEF: Copy that, reading you 5x5                               │
+│  → N0HUB [WALL]: Net starts in 10 minutes on 14.300                │
+│                                                                      │
+├──────────────────┬───────────────────────────────────────────────── │
+│ > type message   │ Transport      │ Active Sessions       │          │
+│ WALL▶ broadcast  │ ◉ TCP/Internet │ W1ABC [VHF_AX25] 12s │          │
+│                  │ ○ Hybrid Mode  │ W2DEF [TCP]      45s │          │
+│                  │ ○ ARDOP HF     │ W3GHI [HF_AX25]  8s  │          │
+│                  │ ○ ARDOP FM     │                       │          │
+│                  │ ○ VHF AX.25    │                       │          │
+│                  │ ○ HF AX.25     │                       │          │
+└──────────────────┴───────────────────────────────────────────────── ┘
 ```
 
-The top of the console shows your callsign, transport mode, and connection state. Outgoing messages are shown with `→`, incoming with `←`, and system events with `★`.
+The status bar shows callsign, transport, connection state, encryption mode, auth state, and — on hub stations — a live session count. The sidebar shows all available transports and, for hub stations, a live list of connected spokes with idle times and a ✕ disconnect button for each.
+
+The **WALL▶** broadcast bar above the input field lets hub operators send a message to all connected spokes instantly.
 
 ---
 
 ## Typical Spoke Session
 
 ### 1. Select transport
-The sidebar shows the available transports. Click **FreeDV HF** (or ARDOP, or TCP). The modem starts automatically.
+
+Click the transport button in the sidebar that matches your radio setup:
+- **TCP / Internet** — direct IP connection
+- **ARDOP HF** — HF SSB (start modem first)
+- **ARDOP FM** — VHF/UHF FM (start modem first)
+- **VHF AX.25 9600** — Direwolf packet (Direwolf must be configured)
+- **HF AX.25 300** — Direwolf HF packet (Direwolf must be configured)
 
 ### 2. Connect to the hub
 ```
-/connect L3RHUB
+/connect N0HUB           ← ARDOP or AX.25 (callsign)
+/connect 192.168.1.10    ← TCP (IP address)
 ```
-The Pi transmits a connection request over the air. On a clear channel this typically completes in 10–30 seconds. The console will show `✓ Connected to L3RHUB` when the link is up.
 
 ### 3. Authenticate
 ```
 /auth yourpassword
 ```
-Your password is sent encrypted to the hub. On success: `✓ Authenticated — Welcome <CALLSIGN>`.
 
-### 4. Retrieve waiting messages
+### 4. Chat, message, and transfer
 ```
-/retrieve
+Hello everyone on the net       ← broadcast to all connected stations
+/send W1ABC Meet at 0900Z       ← store for offline station
+/retrieve                       ← collect waiting messages
+/files                          ← list hub files
+/download emergency_plan.pdf    ← download a file
 ```
-The hub delivers any messages stored for you since your last check-in.
 
-### 5. Send live chat
-Just type and press Enter. Your message appears immediately and a `✓ Message delivered to hub` confirmation appears when the hub's radio has acknowledged receipt.
-
-### 6. Send a message to an offline station
-```
-/send W1ABC Check in at 0900Z tomorrow on 14.300
-```
-The hub stores the message. When W1ABC next checks in and runs `/retrieve`, they will receive it.
-
-### 7. List and download files
-```
-/files
-/download emergency_plan.pdf
-```
-The hub sends the file in chunks over the ARQ link. A progress indicator shows each chunk as it arrives. Use `/cancel` to abort a download in progress.
-
-### 8. Disconnect
+### 5. Disconnect
 ```
 /disconnect
 ```
-A clean disconnect packet is sent to the hub. If the link drops without a clean disconnect, both sides will time out automatically after 2 minutes of silence.
 
 ---
 
 ## Hub Operations
 
-The hub console works the same way as a spoke console, with additional commands available because no outgoing connection is needed.
+### Managing multiple sessions
+
+The sidebar **Active Sessions** panel shows every connected spoke with its transport type, idle time, and a ✕ button to force-disconnect it. The same information is available as a command:
+
+```
+/sessions
+```
+
+### Broadcasting to all spokes
+```
+/wall Net starts in 10 minutes on 14.300
+```
+Or use the **WALL▶** bar above the input field. The message is delivered to all authenticated spokes simultaneously regardless of which transport they connected on.
+
+### Sending directly to one spoke
+```
+/send W1ABC Your file is ready for download
+```
+If the spoke is currently connected the message is delivered immediately. If offline it is stored for the next check-in.
+
+### Disconnecting a spoke
+```
+/kick W1ABC
+```
+Or click the ✕ button next to their callsign in the session panel.
 
 ### Adding users
 ```
 /adduser W1ABC secretpassword
 /adduser W2DEF anotherpassword
 ```
-User credentials are stored locally on the hub Pi.
-
-### Listing users
-```
-/listusers
-```
 
 ### Checking stored messages and files
 ```
 /storage
 ```
-Shows how many messages are queued for each recipient and how many files are available for download.
-
-### Live chat with a connected station
-When a spoke is connected the hub operator can simply type to reply. No authentication or `/connect` is needed on the hub — the hub is always ready.
 
 ### Adding files for distribution
-Open `http://<hub-pi-address>/files` in your browser. The **Hub Files** page lets you:
-
-- **Upload** any file by clicking the upload area or dragging and dropping — add an optional description that will be shown to spoke stations in the `/files` listing
-- **Edit** the description of any file already on the hub by clicking the ✎ button
-- **Delete** any file with the 🗑 button
-
-The Hub Files page is available in the navigation bar on all pages. It is accessible from any device on the same network as the hub Pi — no command line access is needed.
-
-Files are sent in 512-byte chunks over the ARQ link. On FreeDV DATAC1 at typical HF speeds a 50 KB file takes approximately 10–15 minutes. Plan accordingly.
+Open `http://<hub-pi-address>/files`. Upload files by clicking or dragging and dropping, add descriptions, edit or delete existing files.
 
 ---
 
-## FreeDV Modes
+## Direwolf AX.25
 
-The FreeDV mode is selected from the sidebar in the console. All stations in a QSO must use the same mode.
+Direwolf provides **connected-mode AX.25** packet radio sessions. Unlike ARDOP, Direwolf handles multiple simultaneous connections natively — up to 10 connected AX.25 sessions can be active at the same time, all ARQ-handled automatically by Direwolf.
 
-| Mode | Bandwidth | Speed | Use when |
-|------|-----------|-------|----------|
-| DATAC1 | 1.25 kHz | ~980 bps | Standard — good balance of speed and robustness |
-| Announce | 1.25 kHz | ~980 bps | Broadcast message to all stations, fire and forget, no ack |
+### VHF AX.25 — 9600 baud
 
-**DATAC1 was found to be best suited for this application. 
+- **Modulation:** G3RUH FSK — requires a flat audio path (no de-emphasis)
+- **Typical range:** 20–100 km line-of-sight on a 2m FM radio
+- **Throughput:** Several kilobits per second — file transfers that take 15 minutes on HF complete in seconds
+- **Hardware:** DigiRig Mobile + any 2m FM radio with a data/accessory port
 
----
+### HF AX.25 — 300 baud
 
-## TCP Mode — Private Encrypted Internet Communications
+- **Modulation:** Bell 202 AFSK, mark 1600 Hz / space 1800 Hz — standard HF packet tones
+- **Typical range:** Regional to worldwide depending on band and conditions
+- **Throughput:** ~250 bps effective — slower than ARDOP HF but handles multiple simultaneous sessions
+- **Hardware:** DigiRig Mobile + any HF SSB transceiver
 
-TCP mode connects two HF-256 stations directly over the internet or a local area network without any radio hardware. Despite the name, TCP mode is not limited to local use — it works across the public internet anywhere two stations can reach each other over port 14256.
+### Configuring Direwolf
 
-**Why use TCP mode:**
+Open **Settings → Direwolf** in the web portal. Set:
 
-When used with encryption enabled, TCP mode gives you a **private, authenticated messaging platform** that works anywhere in the world with an internet connection. All traffic — chat, stored messages, and file transfers — is protected with the same AES-256-GCM encryption used over the air. An eavesdropper on the network sees only encrypted ciphertext. The hub authenticates every connecting station against its user database before any traffic is exchanged.
+| Setting | VHF channel | HF channel |
+|---------|-------------|------------|
+| ALSA card | Card index from `arecord -l` | Second card index |
+| Serial port | `/dev/ttyUSB0` (DigiRig) | `/dev/ttyUSB1` |
+| PTT method | RTS | RTS |
+| Baud rate | 9600 | 300 (fixed) |
 
-This makes TCP mode useful well beyond testing:
-- A fixed hub at an EOC or club station can be reached by members anywhere in the world
-- Operators travelling internationally can stay in contact with their home network
-- During internet-available emergencies, TCP provides instant full-speed connectivity that falls back to radio when the internet fails
+Click **Apply**. The portal writes `/etc/direwolf/direwolf.conf`, unmasks the Direwolf service, and starts it. Verify with `journalctl -u direwolf -n 20`.
 
-**Connecting over TCP:**
-```
-/connect 203.0.113.45
-```
-or if the hub operator has a DNS name:
-```
-/connect hub.example.net
-```
-
-The hub must have port 14256 open and reachable. For a hub behind a home router, standard port forwarding applies. Speed over TCP is limited only by the internet connection — file transfers that take 15 minutes over HF complete in seconds.
+Direwolf is **masked by default** on the Pi image — it cannot start until the operator configures valid audio card numbers.
 
 ---
 
-## ARDOP FM — Local VHF/UHF and FM Band Communications
+## Mesh Sync
 
-ARDOP FM uses the same ARDOP protocol but is optimised for **FM rather than SSB**, making it suitable for VHF, UHF, and any FM-capable band. This opens HF-256 to a much wider range of local and regional communication scenarios that do not require HF propagation.
+Hub stations can synchronise their message stores and file libraries with each other automatically using the mesh sync protocol on **TCP port 14257**.
 
-**Use cases for ARDOP FM:**
+### How it works
 
-- **Local emergency nets** — a club or ARES group running ARDOP FM on a 2m or 70cm FM simplex or repeater frequency gets the full HF-256 feature set (encryption, store-and-forward, file distribution) at VHF speeds and ranges
-- **Linked repeater systems** — where a repeater network connects a wide area, ARDOP FM can carry HF-256 traffic across that network giving store-and-forward capability without internet
-- **Field day and portable operations** — a handheld or mobile radio with a DigiRig interface is all that is needed; no HF antenna or licence upgrade required for operators holding a Technician class licence
-- **Backup path** — a site that normally uses internet TCP can fall back to ARDOP FM on VHF when both internet and HF are unavailable
+1. Hub A connects to Hub B on port 14257
+2. Hub A sends the SHA-256 digests of all messages and files in its store
+3. Hub B compares digests and sends only the items Hub A does not have
+4. Both sides swap roles and repeat in the other direction
+5. The sync completes in seconds for small stores over a LAN; minutes over HF
 
-**Speed:** ARDOP FM operates considerably faster than HF modes. On a clear VHF FM path, data rates of several kilobits per second are achievable, making file transfers that would take many minutes on HF complete in seconds.
+All frames are encrypted with the shared network key — a hub without the correct key cannot sync.
 
-**Selecting ARDOP FM:** Click **ARDOP FM** in the console sidebar. The same DigiRig Mobile or compatible USB audio interface used for HF works on VHF — simply connect it to your VHF/UHF radio instead.
+### Configuring mesh peers
 
----
+Open **Settings → Mesh Peers** and add IP addresses:
 
-## Hybrid Mode — Simultaneous TCP and Radio
+```
+192.168.1.20         ← LAN hub
+hub2.example.net     ← Remote hub by DNS name
+10.0.0.5:14257       ← Remote hub with explicit port
+```
 
-Hybrid Mode is a **hub-only feature** that allows the hub station to accept TCP/internet connections and radio connections (FreeDV or ARDOP FM) simultaneously. A spoke station with internet access can connect via TCP and leave messages for a spoke that only has radio access — and vice versa. All messages go through the same store-and-forward system regardless of which transport they arrived on.
+Sync runs every 5 minutes automatically. Trigger an immediate sync:
 
-**Enabling Hybrid Mode:**
-
-Click the **Hybrid Mode** button in the console sidebar Transport section. The button uses a dashed border to distinguish it from the mutually-exclusive transport buttons. When active it shows ◉ Hybrid Mode.
-
-Once enabled:
-- The TCP server on port 14256 stays running permanently
-- You can freely switch between FreeDV and ARDOP FM without losing TCP connectivity
-- Spoke stations on the internet can connect via TCP while radio spokes connect over the air
-- Clicking the TCP/Internet button while Hybrid Mode is on shows a note that TCP is already running
-
-**Disabling Hybrid Mode:** Click the Hybrid Mode button again to toggle it off. The TCP server will stop.
-
-> **Note:** Hybrid Mode requires the hub to have a reachable IP address on port 14256 for TCP spokes. See the Troubleshooting section if your hub is behind CGNAT.
-
-> **Spoke stations:** The Hybrid Mode button is visible on spoke consoles but will show a warning if clicked — it is a hub-only function.
+```
+POST /api/mesh/sync-now   {"address": "192.168.1.20"}
+```
 
 ---
 
@@ -331,21 +340,23 @@ Once enabled:
 ### Connection
 | Command | Description |
 |---------|-------------|
-| `/connect <CALLSIGN>` | Connect to a hub station (FreeDV/ARDOP) or `/connect <IP>` (TCP) |
-| `/disconnect` | Cleanly disconnect from the hub |
+| `/connect <CALLSIGN>` | Connect via ARDOP HF/FM or AX.25 |
+| `/connect <IP> [port]` | Connect to hub via TCP |
+| `/disconnect` | Cleanly disconnect |
 
 ### Authentication
 | Command | Description |
 |---------|-------------|
 | `/auth <password>` | Authenticate with the hub |
 | `/encrypt on\|off` | Toggle AES-256-GCM encryption |
-| `/whoami` | Show callsign, transport, connection and auth status |
+| `/whoami` | Show callsign, transport, session count, and auth status |
 
 ### Messaging
 | Command | Description |
 |---------|-------------|
-| (type + Enter) | Send live chat to connected hub |
+| type + Enter | Send live chat — broadcast to all authenticated spokes |
 | `/send <CALL> <message>` | Store a message for an offline station |
+| `/bul <message>` | Store a bulletin for all registered stations |
 | `/retrieve` | Retrieve messages stored for you at the hub |
 
 ### File transfer
@@ -355,14 +366,12 @@ Once enabled:
 | `/download <filename>` | Download a file from the hub |
 | `/cancel` | Cancel a download in progress |
 
-### FreeDV
-| Command | Description |
-|---------|-------------|
-| `/announce <message>` | Broadcast to all listening stations (no connection needed) |
-
 ### Hub only
 | Command | Description |
 |---------|-------------|
+| `/wall <message>` | Broadcast to all connected authenticated spokes |
+| `/sessions` | List all active sessions with transport and idle time |
+| `/kick <CALLSIGN>` | Disconnect a specific spoke session |
 | `/adduser <CALL> <password>` | Add a user to the hub |
 | `/listusers` | List all registered users |
 | `/storage` | Show queued messages and available files |
@@ -372,6 +381,7 @@ Once enabled:
 |---------|-------------|
 | `/clear` | Clear the console window |
 | `/help` | Show the command reference panel |
+| `/passwd <current> <new>` | Change your password |
 
 ---
 
@@ -379,112 +389,271 @@ Once enabled:
 
 All traffic is encrypted with **AES-256-GCM** using a 256-bit network key shared among all stations. The key never travels over the air. Every message, file chunk, and authentication packet is individually encrypted with a random 96-bit IV — no two transmissions look the same even if the content is identical.
 
-The network key is stored in `/etc/hf256/network.key` on each Pi. Protect it as you would any cryptographic credential. If the key is compromised, generate a new one on the hub and distribute it to all stations out-of-band.
+The network key is stored in `/etc/hf256/network.key` on each Pi. Store-and-forward messages are double-encrypted: first with the network key in transit, then stored on the hub encrypted so that storage compromise does not expose message content.
 
-Store-and-forward messages are **double encrypted**: first with the network key when sent over the air, and stored on the hub encrypted again so that hub storage compromise does not expose message content.
+Mesh sync frames between hub stations are also AES-256-GCM encrypted with the shared network key.
 
 ## Global Use and Regulatory Compliance
 
-HF-256 is designed to be useful to amateur radio operators worldwide. Radio regulations differ significantly between countries — in particular, the rules governing encryption over amateur radio vary.
+HF-256 fully supports plaintext operation. In the United States (47 CFR Part 97), Canada, and many other jurisdictions, encryption of amateur radio transmissions is prohibited or restricted. Disable encryption with:
 
-**In some countries**, including the United States (47 CFR Part 97), Canada, and many others, encryption of amateur radio transmissions is either prohibited or restricted to specific circumstances. **HF-256 fully supports plaintext operation** to comply with these rules.
-
-To disable encryption:
 ```
 /encrypt off
 ```
 
-The status bar will show **PLAINTEXT** as a reminder whenever encryption is off. All message content, file transfers, and chat will be transmitted in the clear. Re-enable at any time with `/encrypt on`.
+The status bar shows **🔓 Plaintext** as a permanent reminder. All stations in a session must use the same mode.
 
-**In other countries** where encryption is permitted or where HF-256 is being used on licensed private frequencies or in emergency management contexts, the full AES-256-GCM encryption capability can be used.
-
-**It is the responsibility of each operator to understand and comply with the laws and licence conditions that apply in their jurisdiction.** If you are unsure, operate in plaintext mode and consult your national amateur radio society.
-
-The network key is only used when encryption is enabled. Plaintext mode stations and encrypted stations cannot communicate directly — all stations in a session must use the same mode. The hub operator can enforce this by ensuring all registered users configure their stations consistently.
+**It is the responsibility of each operator to understand and comply with the laws and licence conditions that apply in their jurisdiction.**
 
 ---
 
 ## Troubleshooting
 
-**Connection attempts time out / no CONN_ACK received**
-- Confirm the hub Pi has FreeDV selected and the modem is running (green status on the hub's Status page)
-- Check that both stations are on the same frequency and mode
-- Try DATAC3 — it is more robust on marginal paths
-- The spoke will retry automatically up to 5 times before giving up
+**Hub shows session count but I cannot see chat from other spokes**
+- Confirm both spokes have authenticated (`/auth`) — unauthenticated sessions do not receive broadcasts
+- Check `journalctl -u hf256-portal -n 50` for any HubCore dispatch errors
 
-**Authentication times out after connecting**
-- Check that your callsign is registered on the hub (`/listusers` on the hub console)
-- Verify the password is correct
-- Confirm both stations have the same network key loaded (Status page shows key status)
+**VHF AX.25 sessions connect but immediately drop**
+- Verify Direwolf is running: `systemctl status direwolf`
+- Check audio levels: `arecord -l` to confirm the card index matches Settings → Direwolf
+- 9600 baud requires a **flat audio cable** — do not use a cable with de-emphasis filtering
+- Confirm the radio's data port is set to 9600 baud in the radio menu
 
-**File download stalls mid-transfer**
-- This is usually RF — the ARQ will retry automatically up to 3 times per chunk
-- If the link drops, use `/disconnect` and reconnect to restart the session
-- Use `/cancel` to abort cleanly then try again
+**HF AX.25 connection attempts do not complete**
+- Confirm both stations are on USB mode (not LSB) — HF packet uses 1600/1800 Hz tones
+- 300 baud FRACK is 10 seconds — be patient; the ARQ handshake takes longer than ARDOP
+- Check `journalctl -u direwolf -n 30` for any "no signal" or audio level messages
 
-**Hub shows "KISS socket closed" and restarts the listener**
-- This is normal after a disconnect — the listener restarts automatically
-- If it happens repeatedly without any connection attempt, check that `freedvtnc2` is running on the Status page
+**Direwolf crashes immediately after starting**
+- The most common cause is an incorrect ALSA card index — run `arecord -l` on the Pi and verify the card numbers
+- A second cause is the serial PTT port not existing: `ls /dev/ttyUSB*` to confirm ports
+- Check: `journalctl -u direwolf -n 20`
 
-**Both sides disconnected but the console still shows Connected**
-- The inactivity watchdog will disconnect after 2 minutes of silence
-- You can force disconnect with `/disconnect` at any time
+**Mesh sync is not running**
+- Confirm the peer IP is reachable on port 14257: `nc -zv <peer-ip> 14257`
+- Both hubs must have the same network key — sync frames are encrypted; mismatched keys cause silent decryption failure
+- Check: `journalctl -u hf256-portal -n 50 | grep mesh`
+
+**ARDOP connection attempts time out**
+- Confirm the hub Pi has ARDOP HF selected and ardopc is running (green status on Status page)
+- Check that both stations are on the same frequency with USB mode
+- Check `journalctl -u hf256-portal -n 50` for startup errors
+
+**Session limit reached — new spokes rejected**
+- Default maximum is 10 sessions; change `max_sessions` in `/etc/hf256/settings.json` and restart the portal
+- Idle sessions are evicted after 5 minutes of silence; unauthenticated sessions after 2 minutes
+
+**Both sides disconnected but console still shows Connected**
+- The inactivity watchdog disconnects after 2 minutes of silence (radio) or 5 minutes (TCP)
+- Force disconnect with `/disconnect` at any time
 
 **No audio / PTT not keying**
 - Visit the Status page and run the PTT test
-- Check the audio card number in Settings matches the device shown by `arecord -l`
-- For DigiRig Mobile: confirm the USB serial port is `/dev/ttyUSB0`
-- For CI-V radios (Xiegu X6100/G90, Icom IC-705/7300/7100/9700): confirm the CI-V baud rate is 19200 and the serial port is correct (`/dev/ttyACM0` or `/dev/ttyACM1`)
+- For DigiRig Mobile: confirm the USB serial port is `/dev/ttyUSB0` (or `/dev/ttyUSB1` for the second unit)
+- For CI-V radios: confirm the CI-V baud rate is 19200 and the port is `/dev/ttyACM0` or `/dev/ttyACM1`
 
 ---
 
 ## File Locations on the Pi
 
+### Runtime data
+
 ```
 /etc/hf256/
-├── network.key          ← AES-256 network key (protect this)
-├── settings.json        ← Station configuration
-└── config.env           ← Modem startup parameters
+├── network.key              ← AES-256 network key (protect this)
+├── settings.json            ← Station configuration (all settings)
+├── config.env               ← Modem startup parameters
+└── backups/                 ← Timestamped config.env backups
+
+/etc/direwolf/
+└── direwolf.conf            ← Generated by portal Settings → Direwolf
+                               (masked/unconfigured until operator sets it up)
 
 /home/pi/.hf256/
-├── passwords.json       ← Hub user database (hub only)
-├── hub_files/           ← Files available for download (hub only)
+├── passwords.json           ← Hub user database — SHA-256 hashed (hub only)
+├── mesh_sync.json           ← Mesh sync state — last-sync timestamps per peer
+├── hub_files/               ← Files available for spoke download (hub only)
 │   ├── document.pdf
-│   └── document.pdf.desc
-└── hub_messages/        ← Stored messages per recipient (hub only)
-    └── W1ABC/
-        └── 1700000000000
-
-/opt/hf256/
-├── portal/              ← Web portal (Flask)
-└── hf256/               ← Core Python package
+│   └── document.pdf.desc    ← Optional description shown in /files listing
+└── hub_messages/            ← Store-and-forward mailboxes (hub only)
+    ├── W1ABC/
+    │   └── 1714000000000    ← Filename = millisecond timestamp
+    └── W2DEF/
+        └── 1714000001234
 ```
 
+### Application (installed by build.sh)
+
+```
+/opt/hf256/
+│
+├── hf256/                   ← Core Python package
+│   ├── __init__.py
+│   ├── ardop.py             ← ARDOP modem interface (ARDOPConnection)
+│   ├── chat.py              ← Wire protocol message types and pack/unpack
+│   ├── crypto.py            ← AES-256-GCM key management
+│   ├── filetransfer.py      ← File chunking helpers
+│   ├── freedv.py            ← FreeDV transport
+│   ├── freedv_transport.py  ← FreeDV KISS transport
+│   ├── kiss.py              ← KISS framing
+│   ├── mercury_transport.py ← Mercury transport
+│   ├── storage.py           ← Message store helpers
+│   │
+│   ├── session_manager.py   ← ★ NEW — ClientSession + SessionManager
+│   ├── tcp_transport.py     ← ★ UPDATED — TCPServerTransport (multi-client)
+│   │                                      TCPTransport (spoke/client, unchanged API)
+│   ├── direwolf_transport.py ← ★ NEW — Direwolf AGW transport (VHF + HF AX.25)
+│   ├── hub_core.py          ← ★ NEW — Multi-session hub protocol handler
+│   ├── mesh_sync.py         ← ★ NEW — Hub-to-hub message + file synchronisation
+│   └── direwolf_config.py   ← ★ NEW — Generates /etc/direwolf/direwolf.conf
+│
+└── portal/                  ← Web portal (Flask, runs as root on port 80)
+    ├── app.py               ← ★ UPDATED — multi-session hub services at boot
+    ├── hardware.py          ← Hardware detection helpers
+    ├── display.py           ← PiTFT display driver
+    └── templates/
+        ├── console.html     ← ★ UPDATED — session panel, broadcast bar, Direwolf buttons
+        ├── status.html      ← Status dashboard
+        ├── settings.html    ← Settings wizard
+        ├── setup.html       ← First-run setup wizard
+        ├── files.html       ← Hub file management
+        └── help.html        ← Command reference
+
+/usr/local/bin/
+└── ardopc                   ← ARDOP modem binary (ardopcf arm64)
+
+/usr/bin/
+└── direwolf                 ← Direwolf soundcard TNC (from apt)
+```
+
+### Systemd services
+
+```
+/etc/systemd/system/
+├── hf256-portal.service     ← Web portal (Flask on port 80) — ENABLED
+├── hf256-display.service    ← PiTFT display daemon — ENABLED
+├── hf256-firstboot.service  ← First-boot setup tasks — ENABLED (runs once)
+├── hf256-wlan.service       ← Wi-Fi AP / client mode manager — ENABLED
+├── freedvtnc2.service       ← FreeDV TNC (started on demand) — ENABLED
+├── rigctld.service          ← Hamlib CAT control (started on demand) — ENABLED
+├── direwolf.service         ← ★ NEW — Direwolf AX.25 TNC — MASKED until configured
+└── hf256.service            ← Legacy standalone mode — MASKED (superseded by portal)
+```
+
+### Source repository layout
+
+This is where files live in the development repository and how `build.sh` maps them to the Pi image:
+
+```
+<repo-root>/
+│
+├── hf256/                   ← Python package → /opt/hf256/hf256/
+│   ├── __init__.py
+│   ├── ardop.py
+│   ├── chat.py
+│   ├── crypto.py
+│   ├── filetransfer.py
+│   ├── freedv.py
+│   ├── freedv_transport.py
+│   ├── kiss.py
+│   ├── mercury_transport.py
+│   ├── storage.py
+│   ├── session_manager.py   ← ★ NEW — place here
+│   ├── tcp_transport.py     ← ★ REPLACE existing file with new version
+│   ├── direwolf_transport.py ← ★ NEW — place here
+│   ├── hub_core.py          ← ★ NEW — place here
+│   ├── mesh_sync.py         ← ★ NEW — place here
+│   └── direwolf_config.py   ← ★ NEW — place here
+│
+├── portal/                  ← Flask portal → /opt/hf256/portal/
+│   ├── app.py               ← ★ UPDATE — apply app_additions.py patch
+│   ├── hardware.py
+│   ├── display.py
+│   └── templates/
+│       ├── console.html     ← ★ REPLACE with new version
+│       ├── status.html
+│       ├── settings.html
+│       ├── setup.html
+│       ├── files.html
+│       └── help.html
+│
+├── services/                ← Systemd units → /etc/systemd/system/
+│   ├── hf256-portal.service
+│   ├── hf256-display.service
+│   ├── hf256-firstboot.service
+│   ├── hf256-wlan.service
+│   ├── freedvtnc2.service
+│   ├── rigctld.service
+│   └── direwolf.service     ← ★ NEW — place here
+│
+├── scripts/                 ← Shell scripts → /opt/hf256/scripts/
+│   ├── first-boot.sh
+│   ├── wifi-mode.sh
+│   ├── wifi-mode-boot.sh
+│   ├── start-stack.sh
+│   ├── stop-stack.sh
+│   └── hf256-wifi-restore.sh
+│
+├── configs/                 ← System configs → installed by build.sh
+│   ├── asound.conf          → /etc/asound.conf
+│   ├── hostapd.conf         → /etc/hostapd/hostapd.conf
+│   ├── hostapd-rfkill.conf  → /etc/systemd/system/hostapd.service.d/rfkill.conf
+│   └── dnsmasq.conf         → /etc/dnsmasq.d/hf256.conf
+│
+└── image/                   ← Build artifacts (not installed)
+    ├── build.sh             ← ★ UPDATED — builds v0.1.0 image
+    ├── ardopcf_arm_Linux_64 ← ARDOP binary (download separately)
+    └── radios.json          ← Supported radio definitions
+```
+
+---
+
+## Ports Reference
+
+| Port | Protocol | Direction | Purpose |
+|------|----------|-----------|---------|
+| 80 | TCP | inbound | Web portal (Flask) |
+| 14256 | TCP | inbound (hub) | Spoke connections — multi-client |
+| 14257 | TCP | inbound (hub) | Hub-to-hub mesh sync |
+| 8000 | TCP | loopback | Direwolf AGW interface |
+| 8001 | TCP | loopback | Direwolf KISS interface |
+| 8002 | TCP | loopback | FreeDV TNC command port |
+| 8515 | TCP | loopback | ardopc command port |
+| 8516 | TCP | loopback | ardopc data port |
+
+Ports 8000–8002, 8515–8516 are loopback-only and not exposed to the network.
 
 ---
 
 ## SSH Access
-
-Each Pi is accessible via SSH for diagnostics and administration.
 
 ```
 Username: pi
 Password: 12345678
 ```
 
-Connect from any device on the same network:
-
 ```bash
 ssh pi@hf256.local
-# or by IP address
-ssh pi@192.168.4.1      # when Pi is in AP mode
-ssh pi@<assigned-ip>    # when Pi is in client WiFi mode
+ssh pi@192.168.4.1      # AP mode
+ssh pi@<assigned-ip>    # client Wi-Fi mode
 ```
 
-The IP address is shown on the PiTFT display. If you cannot connect via `hf256.local`, use the IP address directly.
-
-> **Security note:** Change the default password after initial setup using `passwd` at the SSH prompt. This is especially important for hub stations accessible from a wider network.
+> **Security note:** Change the default password after initial setup: `passwd` at the SSH prompt. This is especially important for hub stations accessible over the internet.
 
 ---
 
-*HF-256 — Version Alpha 0.0.1*
+## Key Log Locations
+
+| Service | Command |
+|---------|---------|
+| Portal + HubCore | `journalctl -u hf256-portal -n 50 -f` |
+| Direwolf | `journalctl -u direwolf -n 50 -f` |
+| Session watchdog | `journalctl -u hf256-portal -n 50 \| grep session` |
+| Mesh sync | `journalctl -u hf256-portal -n 50 \| grep mesh` |
+| ARDOP modem | `journalctl -u hf256-portal -n 50 \| grep ardop` |
+| Display daemon | `journalctl -u hf256-display -n 20` |
+| Application log | `tail -f ~/.hf256/hf256.log` |
+
+---
+
+*HF-256 MSA — Version Alpha 0.1.0*

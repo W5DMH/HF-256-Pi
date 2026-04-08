@@ -15,8 +15,8 @@
     --bg: #0d1117; --surface: #161b22; --border: #30363d;
     --text: #e6edf3; --muted: #8b949e; --accent: #2ea043;
     --blue: #388bfd; --orange: #d29922; --red: #da3633;
+    --purple: #8957e5; --teal: #2ea043;
     --radius: 8px;
-    /* Console-specific */
     --con-bg: #010409; --con-green: #3fb950; --con-cyan: #58a6ff;
     --con-yellow: #e3b341; --con-dim: #6e7681; --con-sep: #1c2128;
     --con-font: 'Courier New', 'Lucida Console', monospace;
@@ -26,9 +26,6 @@
     background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     font-size: 15px; line-height: 1.6;
-    /* Full-height layout so console fills viewport.
-       100dvh = dynamic viewport height — accounts for Android Chrome
-       address bar. Falls back to 100vh on older browsers. */
     display: flex; flex-direction: column;
     height: 100vh; height: 100dvh; overflow: hidden;
   }
@@ -44,10 +41,8 @@
     font-size: 0.85rem; border: 1px solid var(--border);
     color: var(--text); background: var(--bg);
   }
-  .nav-btn.active {
-    background: var(--blue); border-color: var(--blue); color: #fff;
-  }
-  .topbar-spacer { flex: 1; }
+  .nav-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .topbar-spacer  { flex: 1; }
 
   /* ── Status bar ─────────────────────────────────────────── */
   #status-bar {
@@ -59,7 +54,7 @@
   .s-part { display: flex; align-items: center; }
   .s-sep  { color: var(--border); margin: 0 8px; }
   .s-call    { color: var(--con-cyan); font-weight: bold; }
-  .s-transport         { color: var(--con-dim); }
+  .s-transport           { color: var(--con-dim); }
   .s-transport-connected { color: var(--con-green); }
   .s-conn-ok   { color: var(--con-green); }
   .s-conn-busy { color: var(--con-yellow); }
@@ -70,13 +65,13 @@
   .s-auth-no { color: var(--con-yellow); }
   .s-ws-ok   { color: var(--con-green); }
   .s-ws-off  { color: var(--red); }
+  /* Hub session counter in status bar */
+  #s-sessions { color: var(--purple); }
 
-  /* ── Main layout ────────────────────────────────────────── */
-  #main {
-    flex: 1; display: flex; overflow: hidden;
-  }
+  /* ── Main layout ─────────────────────────────────────────── */
+  #main { flex: 1; display: flex; overflow: hidden; }
 
-  /* ── Message area ───────────────────────────────────────── */
+  /* ── Console area ────────────────────────────────────────── */
   #console-wrap {
     flex: 1; display: flex; flex-direction: column;
     border-right: 1px solid var(--border); overflow: hidden;
@@ -89,278 +84,262 @@
   }
   #console-out::-webkit-scrollbar { width: 6px; }
   #console-out::-webkit-scrollbar-track { background: var(--con-bg); }
-  #console-out::-webkit-scrollbar-thumb {
-    background: var(--border); border-radius: 3px;
-  }
+  #console-out::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-  /* Message rows */
-  .msg { line-height: 1.55; margin-bottom: 1px;
-         white-space: pre-wrap; word-break: break-word; }
+  .msg { line-height: 1.55; margin-bottom: 1px; white-space: pre-wrap; word-break: break-word; }
   .msg-ts   { color: var(--con-dim); }
   .msg-star { color: var(--con-yellow); }
   .msg-sys  { color: var(--con-dim); font-style: italic; }
-  .msg-sep  {
-    color: #1a2a1a; font-size: 11px; margin: 2px 0;
-    user-select: none;
-  }
+  .msg-hub  { color: var(--purple); font-style: italic; }
+  .msg-sep  { color: #1a2a1a; font-size: 11px; margin: 2px 0; user-select: none; }
   .msg-out .msg-arrow { color: var(--con-cyan); }
   .msg-out .msg-call  { color: var(--con-cyan); }
   .msg-in  .msg-arrow { color: var(--con-green); }
   .msg-in  .msg-call  { color: var(--con-green); }
 
-  /* ── Input bar ──────────────────────────────────────────── */
+  /* ── Input bar ───────────────────────────────────────────── */
   #input-bar {
-    border-top: 1px solid var(--border);
-    background: var(--surface);
-    padding: 7px 10px; display: flex; align-items: center; gap: 8px;
-    flex-shrink: 0;
+    border-top: 1px solid var(--border); background: var(--surface);
+    padding: 7px 10px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;
   }
-  #input-prompt {
-    font-family: var(--con-font); color: var(--con-green);
-    font-weight: bold; font-size: 13px; flex-shrink: 0;
-  }
+  #input-prompt { font-family: var(--con-font); color: var(--con-green); font-weight: bold; font-size: 13px; flex-shrink: 0; }
   #msg-input {
     flex: 1; background: transparent; border: none;
-    color: var(--text); font-family: var(--con-font);
-    font-size: 13px; outline: none;
+    color: var(--text); font-family: var(--con-font); font-size: 13px; outline: none;
   }
   #msg-input::placeholder { color: var(--con-dim); }
   #send-btn {
     padding: 4px 12px; background: var(--surface);
     border: 1px solid var(--border); border-radius: 5px;
-    color: var(--text); font-size: 0.82rem; cursor: pointer;
-    flex-shrink: 0;
+    color: var(--text); font-size: 0.82rem; cursor: pointer; flex-shrink: 0;
   }
   #send-btn:hover { border-color: var(--blue); }
 
-  /* ── Sidebar ────────────────────────────────────────────── */
+  /* ── Sidebar ─────────────────────────────────────────────── */
   #sidebar {
-    width: 190px; flex-shrink: 0;
-    background: var(--surface);
-    display: flex; flex-direction: column;
-    padding: 10px 8px; gap: 0; overflow-y: auto;
+    width: 200px; flex-shrink: 0; background: var(--surface);
+    display: flex; flex-direction: column; padding: 10px 8px;
+    gap: 0; overflow-y: auto;
   }
-  .sb-section {
-    border: 1px solid var(--border); border-radius: 5px;
-    padding: 8px; margin-bottom: 8px;
-  }
+  .sb-section { border: 1px solid var(--border); border-radius: 5px; padding: 8px; margin-bottom: 8px; }
   .sb-title {
     font-size: 10px; font-weight: 600; color: var(--muted);
     text-transform: uppercase; letter-spacing: 0.07em;
-    margin-bottom: 7px; padding-bottom: 5px;
-    border-bottom: 1px solid var(--border);
+    margin-bottom: 7px; padding-bottom: 5px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
   }
+  .sb-badge {
+    background: var(--purple); color: #fff;
+    font-size: 9px; font-weight: 700; padding: 1px 5px;
+    border-radius: 8px; min-width: 16px; text-align: center;
+  }
+
   /* Transport buttons */
   .t-btn {
-    display: block; width: 100%;
-    background: transparent; border: 1px solid var(--border);
-    border-radius: 4px; color: var(--muted);
-    font-family: var(--con-font); font-size: 11px;
-    padding: 5px 7px; text-align: left;
-    cursor: pointer; margin-bottom: 4px;
+    display: block; width: 100%; background: transparent;
+    border: 1px solid var(--border); border-radius: 4px; color: var(--muted);
+    font-family: var(--con-font); font-size: 11px; padding: 5px 7px;
+    text-align: left; cursor: pointer; margin-bottom: 4px;
     transition: background 0.1s, border-color 0.1s;
   }
   .t-btn:last-child { margin-bottom: 0; }
-  .t-btn:hover { background: #1c2128; color: var(--text); }
-  .t-btn.active {
-    background: #0d2137; border-color: var(--blue);
-    color: var(--con-cyan);
+  .t-btn:hover      { background: #1c2128; color: var(--text); }
+  .t-btn.active     { background: #0d2137; border-color: var(--blue); color: var(--con-cyan); }
+  .t-btn.active-vhf { background: #0d2137; border-color: var(--purple); color: #c0a0ff; }
+  .t-btn.active-hf  { background: #1a120a; border-color: var(--orange); color: var(--con-yellow); }
+
+  /* Session panel (hub only) */
+  #session-panel { font-family: var(--con-font); font-size: 10px; line-height: 1.7; }
+  .sess-row {
+    display: flex; align-items: center; gap: 4px;
+    padding: 2px 0; border-bottom: 1px solid #1c2128;
+    color: var(--con-dim);
   }
-  /* Connection info */
-  .sb-info {
-    font-family: var(--con-font); font-size: 11px;
-    line-height: 1.8; color: var(--con-dim);
+  .sess-row:last-child { border-bottom: none; }
+  .sess-call    { color: var(--con-green); font-weight: bold; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .sess-call.unauth { color: var(--con-yellow); }
+  .sess-type    { color: var(--con-dim); font-size: 9px; }
+  .sess-idle    { color: var(--border); font-size: 9px; flex-shrink: 0; }
+  .sess-kick    {
+    cursor: pointer; color: var(--red); font-size: 9px;
+    padding: 0 3px; border-radius: 2px; flex-shrink: 0; opacity: 0.6;
   }
+  .sess-kick:hover { opacity: 1; background: #2d0000; }
+  #session-empty { color: var(--con-dim); font-size: 11px; font-style: italic; text-align: center; padding: 6px 0; }
+
+  /* Broadcast bar (hub only) */
+  #bcast-bar {
+    display: none;   /* shown only for hub role */
+    border-top: 1px solid var(--border); background: #0e1420;
+    padding: 5px 8px; align-items: center; gap: 6px; flex-shrink: 0;
+  }
+  #bcast-label { font-family: var(--con-font); font-size: 11px; color: var(--purple); flex-shrink: 0; }
+  #bcast-input {
+    flex: 1; background: transparent; border: none;
+    color: var(--text); font-family: var(--con-font); font-size: 12px; outline: none;
+  }
+  #bcast-input::placeholder { color: var(--con-dim); }
+  #bcast-btn {
+    padding: 3px 9px; background: #1a0d2e;
+    border: 1px solid var(--purple); border-radius: 4px;
+    color: #c0a0ff; font-size: 0.78rem; cursor: pointer; flex-shrink: 0;
+  }
+  #bcast-btn:hover { background: #2d1050; }
+
+  /* Sidebar info */
+  .sb-info { font-family: var(--con-font); font-size: 11px; line-height: 1.8; color: var(--con-dim); }
   .sb-info .lbl { color: var(--con-yellow); }
+
   /* Quick commands */
-  .qcmd {
-    font-family: var(--con-font); font-size: 11px;
-    color: var(--con-cyan); cursor: pointer;
-    padding: 2px 0; line-height: 1.9;
-    display: block;
-  }
+  .qcmd { font-family: var(--con-font); font-size: 11px; color: var(--con-cyan); cursor: pointer; padding: 2px 0; line-height: 1.9; display: block; }
   .qcmd:hover { color: var(--blue); }
 
-  /* ── Help panel ─────────────────────────────────────────── */
+  /* ── Help panel ──────────────────────────────────────────── */
   #help-panel {
-    display: none;
-    background: var(--surface); border: 1px solid var(--border);
+    display: none; background: var(--surface); border: 1px solid var(--border);
     border-radius: 6px; padding: 10px 12px;
-    font-family: var(--con-font); font-size: 12px;
-    line-height: 1.75; margin: 6px 12px 0;
+    font-family: var(--con-font); font-size: 12px; line-height: 1.75; margin: 6px 12px 0;
   }
-  #help-panel .h-title {
-    color: var(--text); font-weight: bold; margin-bottom: 6px;
-  }
-  #help-panel .h-cmd  { color: var(--con-cyan); }
-  #help-panel .h-desc { color: var(--con-dim); }
-  #help-panel .h-sect {
-    color: var(--con-dim); margin-top: 8px; margin-bottom: 2px;
-  }
+  #help-panel .h-title { color: var(--text); font-weight: bold; margin-bottom: 6px; }
+  #help-panel .h-cmd   { color: var(--con-cyan); }
+  #help-panel .h-desc  { color: var(--con-dim); }
+  #help-panel .h-sect  { color: var(--con-dim); margin-top: 8px; margin-bottom: 2px; }
 
-  /* ── Footer hint ────────────────────────────────────────── */
+  /* ── Recent Connections ────────────────────────────────────── */
+  .recent-entry {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 6px; margin-bottom: 3px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+    font-family: var(--con-font); font-size: 11px;
+  }
+  .recent-entry:hover {
+    border-color: var(--blue); background: rgba(56,139,253,0.08);
+  }
+  .recent-call { color: var(--con-cyan); font-weight: bold; }
+  .recent-via  { color: var(--con-dim);  font-size: 9px; text-align: right; }
+
+  /* ── Logo / footer ───────────────────────────────────────── */
+  .hf-logo { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; margin-right: 4px; }
+  .hf-logo img { width: 28px; height: 28px; border-radius: 6px; filter: drop-shadow(0 0 4px rgba(46,160,67,0.4)); }
+  .hf-logo span { font-size: 0.88rem; font-weight: 700; color: var(--accent); letter-spacing: 0.04em; display: none; }
+  @media (min-width: 480px) { .hf-logo span { display: inline; } }
   #footer {
     background: var(--surface); border-top: 1px solid var(--border);
     padding: 3px 14px; display: flex; justify-content: space-between;
     font-size: 10px; color: var(--con-dim); flex-shrink: 0;
   }
-  kbd {
-    background: #21262d; border: 1px solid var(--border);
-    border-radius: 3px; padding: 0 4px; color: var(--text);
-    font-family: var(--con-font);
-  }
+  kbd { background: #21262d; border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; color: var(--text); font-family: var(--con-font); }
 
-  /* ── Logo ───────────────────────────────────────────────── */
-  .hf-logo {
-    display: inline-flex; align-items: center; gap: 8px;
-    text-decoration: none; margin-right: 4px;
-  }
-  .hf-logo img {
-    width: 28px; height: 28px;
-    border-radius: 6px;
-    /* subtle glow matching the lock icon's green */
-    filter: drop-shadow(0 0 4px rgba(46,160,67,0.4));
-  }
-  .hf-logo span {
-    font-size: 0.88rem; font-weight: 700;
-    color: var(--accent); letter-spacing: 0.04em;
-    display: none;   /* show text only on wider screens */
-  }
-  @media (min-width: 480px) { .hf-logo span { display: inline; } }
-
-  /* ── Mobile layout ──────────────────────────────────────── */
+  /* ── Mobile ──────────────────────────────────────────────── */
   @media (max-width: 600px) {
-    /* Hide sidebar on portrait phones — landscape shows it fine */
     #sidebar { display: none; }
     #footer  { display: none; }
-
-    /* Topbar: prevent wrapping — it steals height from the console.
-       Hide the ws-badge (it wraps to a second line on narrow screens)
-       and compress nav buttons. */
-    .topbar {
-      padding: 5px 8px; gap: 4px;
-      flex-wrap: nowrap; overflow: hidden;
-    }
+    .topbar  { padding: 5px 8px; gap: 4px; flex-wrap: nowrap; overflow: hidden; }
     #ws-badge { display: none; }
     .nav-btn  { padding: 4px 8px; font-size: 0.78rem; }
     .hf-logo img { width: 24px; height: 24px; }
-
-    /* Status bar: single line, no wrapping, scrolls horizontally
-       if needed rather than pushing content down */
-    #status-bar {
-      font-size: 10px; padding: 2px 8px;
-      flex-wrap: nowrap; overflow-x: auto;
-      white-space: nowrap;
-    }
+    #status-bar { font-size: 10px; padding: 2px 8px; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; }
     #status-bar::-webkit-scrollbar { display: none; }
     .s-sep { margin: 0 4px; }
-
-    /* Input bar: prominent tap targets, 16px prevents iOS/Android zoom */
-    #input-bar  { padding: 8px 8px; gap: 6px; flex-shrink: 0; }
-    #msg-input  { font-size: 16px; min-width: 0; }
-    #send-btn   { padding: 8px 16px; font-size: 0.9rem; flex-shrink: 0; }
-    #input-prompt { display: none; } /* hide "hf256>" prompt on mobile */
-
-    /* Console message area fills all remaining space */
+    #input-bar { padding: 8px 8px; gap: 6px; flex-shrink: 0; }
+    #msg-input { font-size: 16px; min-width: 0; }
+    #send-btn  { padding: 8px 16px; font-size: 0.9rem; flex-shrink: 0; }
+    #input-prompt { display: none; }
     #console-wrap { border-right: none; min-height: 0; }
     #console-out  { font-size: 12px; padding: 6px 8px; }
+    #bcast-bar    { display: none !important; }
   }
-
-  /* Landscape phone — show sidebar since there is horizontal room */
   @media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
-    #footer  { display: none; }
+    #footer { display: none; }
     #sidebar { width: 160px; }
     .topbar  { padding: 4px 8px; }
     #status-bar { font-size: 10px; padding: 2px 8px; flex-wrap: nowrap; overflow-x: auto; }
     #status-bar::-webkit-scrollbar { display: none; }
-    #input-bar  { padding: 6px 8px; }
-    #msg-input  { font-size: 16px; }
+    #input-bar { padding: 6px 8px; }
+    #msg-input { font-size: 16px; }
   }
 </style>
 </head>
 <body>
 
-<!-- ── Navigation bar ─────────────────────────────────────── -->
+<!-- ── Navigation bar ──────────────────────────────────────── -->
 <div class="topbar">
-  <a class="hf-logo" href="/status"><img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span></a><a class="nav-btn" href="/status">Status</a>
+  <a class="hf-logo" href="/status"><img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span></a>
+  <a class="nav-btn" href="/status">Status</a>
   <a class="nav-btn" href="/settings">Settings</a>
   <a class="nav-btn active" href="/console">Console</a>
   <a class="nav-btn" href="/files">Hub Files</a>
+  <a class="nav-btn" href="/downloads">Downloads</a>
   <a class="nav-btn" href="/help">Help</a>
   <div class="topbar-spacer"></div>
-  <span style="font-size:11px;color:#888;margin-right:10px;letter-spacing:0.03em;">Version Alpha 0.0.5</span>
-  <span id="ws-badge" style="font-size:11px;color:var(--red)">
-    ⬤ Not connected
-  </span>
+  <span style="font-size:11px;color:#888;margin-right:10px;letter-spacing:0.03em;">Alpha 0.1.0</span>
+  <span id="ws-badge" style="font-size:11px;color:var(--red)">⬤ Not connected</span>
 </div>
 
-<!-- ── Status bar ──────────────────────────────────────────── -->
+<!-- ── Status bar ───────────────────────────────────────────── -->
 <div id="status-bar">
-  <span class="s-part s-call"  id="s-call">{{ settings.callsign or "N0CALL" }}</span>
+  <span class="s-part s-call" id="s-call">{{ settings.callsign or "N0CALL" }}</span>
   <span class="s-sep">│</span>
   <span class="s-part s-transport" id="s-transport">TCP</span>
   <span class="s-sep">│</span>
-  <span class="s-part s-conn-off"  id="s-conn">⬤ Disconnected</span>
+  <span class="s-part s-conn-off" id="s-conn">⬤ Disconnected</span>
   <span class="s-sep">│</span>
-  <span class="s-part" id="s-enc"
-    class="{{ 's-enc-on' if settings.encryption_enabled else 's-enc-off' }}">
+  <span class="s-part" id="s-enc" class="{{ 's-enc-on' if settings.encryption_enabled else 's-enc-off' }}">
     {{ '🔒 Encrypted' if settings.encryption_enabled else '🔓 Plaintext' }}
   </span>
   <span class="s-sep">│</span>
   <span class="s-part s-auth-no" id="s-auth">? Auth</span>
+  {% if settings.role == 'hub' %}
   <span class="s-sep">│</span>
-  <span class="s-part s-ws-off"   id="s-ws">⬤ Linked to Pi</span>
+  <span class="s-part" id="s-sessions">⬡ 0 sessions</span>
+  {% endif %}
+  <span class="s-sep">│</span>
+  <span class="s-part s-ws-off" id="s-ws">⬤ Linked to Pi</span>
 </div>
 
-<!-- ── Main area ───────────────────────────────────────────── -->
+<!-- ── Main area ────────────────────────────────────────────── -->
 <div id="main">
 
   <!-- Console output + input -->
   <div id="console-wrap">
     <div id="console-out"></div>
 
-    <!-- Help panel sits above input, inside console-wrap -->
+    <!-- Help panel -->
     <div id="help-panel">
       <div class="h-title">Available Commands</div>
-      <div><span class="h-cmd">/connect &lt;IP&gt; [port]</span>
-           &nbsp;<span class="h-desc">Connect to hub (TCP) or /connect &lt;CALL&gt; (FreeDV/ARDOP FM)</span></div>
-      <div><span class="h-cmd">/disconnect</span>
-           &nbsp;<span class="h-desc">Disconnect from hub</span></div>
-      <div><span class="h-cmd">/auth &lt;password&gt;</span>
-           &nbsp;<span class="h-desc">Authenticate with hub</span></div>
-      <div><span class="h-cmd">/send &lt;CALL&gt; &lt;message&gt;</span>
-           &nbsp;<span class="h-desc">Store message for offline station</span></div>
-      <div><span class="h-cmd">/retrieve</span>
-           &nbsp;<span class="h-desc">Retrieve stored messages from hub</span></div>
-      <div><span class="h-cmd">/bul &lt;message&gt;</span>
-           &nbsp;<span class="h-desc">Send bulletin to all stations</span></div>
-      <div><span class="h-cmd">/announce &lt;message&gt;</span>
-           &nbsp;<span class="h-desc">FreeDV broadcast — no connection needed</span></div>
-      <div><span class="h-cmd">/files</span>
-           &nbsp;<span class="h-desc">List files available on hub</span></div>
-      <div><span class="h-cmd">/download &lt;filename&gt;</span>
-           &nbsp;<span class="h-desc">Download file from hub</span></div>
-      <div><span class="h-cmd">/cancel</span>
-           &nbsp;<span class="h-desc">Cancel current file download</span></div>
-      <div><span class="h-cmd">/whoami</span>
-           &nbsp;<span class="h-desc">Show callsign and connection status</span></div>
-      <div><span class="h-cmd">/encrypt on|off</span>
-           &nbsp;<span class="h-desc">Toggle encryption</span></div>
-      <div><span class="h-cmd">/help</span>
-           &nbsp;<span class="h-desc">Toggle this help panel</span></div>
+      <div><span class="h-cmd">/connect &lt;IP&gt; [port]</span> &nbsp;<span class="h-desc">Connect to hub (TCP) or /connect &lt;CALL&gt; (ARDOP/AX.25)</span></div>
+      <div><span class="h-cmd">/disconnect</span> &nbsp;<span class="h-desc">Disconnect from hub</span></div>
+      <div><span class="h-cmd">/auth &lt;password&gt;</span> &nbsp;<span class="h-desc">Authenticate with hub</span></div>
+      <div><span class="h-cmd">/send &lt;CALL&gt; &lt;message&gt;</span> &nbsp;<span class="h-desc">Store message for offline station</span></div>
+      <div><span class="h-cmd">/retrieve</span> &nbsp;<span class="h-desc">Retrieve stored messages from hub</span></div>
+      <div><span class="h-cmd">/bul &lt;message&gt;</span> &nbsp;<span class="h-desc">Send bulletin to all stations</span></div>
+      <div><span class="h-cmd">/files</span> &nbsp;<span class="h-desc">List files available on hub</span></div>
+      <div><span class="h-cmd">/download &lt;filename&gt;</span> &nbsp;<span class="h-desc">Download file from hub</span></div>
+      <div><span class="h-cmd">/cancel</span> &nbsp;<span class="h-desc">Cancel current file download</span></div>
+      <div><span class="h-cmd">/whoami</span> &nbsp;<span class="h-desc">Show callsign and connection status</span></div>
+      <div><span class="h-cmd">/encrypt on|off</span> &nbsp;<span class="h-desc">Toggle AES-256-GCM encryption</span></div>
+      <div><span class="h-cmd">/clear</span> &nbsp;<span class="h-desc">Clear the console window</span></div>
+      <div><span class="h-cmd">/help</span> &nbsp;<span class="h-desc">Toggle this help panel</span></div>
       <div class="h-sect">Hub operator commands:</div>
-      <div><span class="h-cmd">/clear</span>
-           &nbsp;<span class="h-desc">Clear the console window</span></div>
-      <div><span class="h-cmd">/passwd &lt;current&gt; &lt;new&gt;</span>
-           &nbsp;<span class="h-desc">Change your password (hub: local, spoke: transmits)</span></div>
-      <div><span class="h-cmd">/adduser &lt;CALL&gt; &lt;pw&gt;</span> <span style="color:#888;font-size:10px">(hub)</span>
-           &nbsp;<span class="h-desc">Add user to hub</span></div>
-      <div><span class="h-cmd">/listusers</span> <span style="color:#888;font-size:10px">(hub)</span>
-           &nbsp;<span class="h-desc">List registered hub users</span></div>
-      <div><span class="h-cmd">/storage</span>
-           &nbsp;<span class="h-desc">Show hub message storage stats (hub only)</span></div>
+      <div><span class="h-cmd">/wall &lt;message&gt;</span> &nbsp;<span class="h-desc">Broadcast to all connected spokes</span></div>
+      <div><span class="h-cmd">/kick &lt;CALL&gt;</span> &nbsp;<span class="h-desc">Disconnect a specific spoke session</span></div>
+      <div><span class="h-cmd">/sessions</span> &nbsp;<span class="h-desc">List all active sessions</span></div>
+      <div><span class="h-cmd">/passwd &lt;current&gt; &lt;new&gt;</span> &nbsp;<span class="h-desc">Change your password</span></div>
+      <div><span class="h-cmd">/adduser &lt;CALL&gt; &lt;pw&gt;</span> &nbsp;<span class="h-desc">Add user to hub (hub only)</span></div>
+      <div><span class="h-cmd">/listusers</span> &nbsp;<span class="h-desc">List registered hub users (hub only)</span></div>
+      <div><span class="h-cmd">/storage</span> &nbsp;<span class="h-desc">Show hub message storage stats (hub only)</span></div>
     </div>
 
+    <!-- Hub broadcast bar (hub only, shown in CSS below) -->
+    <div id="bcast-bar">
+      <span id="bcast-label">WALL▶</span>
+      <input id="bcast-input" type="text" placeholder="Broadcast to all connected spokes..." autocomplete="off" spellcheck="false" />
+      <button id="bcast-btn" onclick="sendBroadcast()">Send All</button>
+    </div>
+
+    <!-- Main input -->
     <div id="input-bar">
       <span id="input-prompt">hf256&gt;</span>
       <input id="msg-input" type="text"
@@ -376,34 +355,68 @@
     <!-- Transport selector -->
     <div class="sb-section">
       <div class="sb-title">Transport</div>
-      <button class="t-btn active" id="t-tcp"
+      <button class="t-btn {% if settings.role == 'hub' %}active{% endif %}"
+              id="t-tcp"
               onclick="selectTransport('tcp')">
-        ◉ TCP / Internet
+        {% if settings.role == 'hub' %}◉{% else %}○{% endif %} TCP / Internet
       </button>
-      <button class="t-btn" id="t-hybrid"
-              onclick="toggleHybrid()"
-              style="border-style:dashed">
-        ○ Hybrid Mode
-      </button>
-      <button class="t-btn" id="t-freedv"
-              onclick="selectTransport('freedv')">
-        ○ FreeDV HF
-      </button>
-      <button class="t-btn" id="t-ardop-fm"
-              onclick="selectTransport('ardop-fm')">
-        ○ ARDOP FM
-      </button>
+      {% if settings.role == 'hub' %}
+      <!-- Hub: TCP always on -->
+      <div style="font-size:10px;color:var(--con-green);
+                  font-family:var(--con-font);
+                  padding:2px 7px 6px;opacity:0.8">
+        ⬤ Always on — port 14256
+      </div>
+      <!-- Hub: VHF AX.25 — always-on indicator if card configured -->
+      {% if settings.direwolf_vhf_card is not none %}
+      <div class="t-btn active-vhf" id="t-vhf-ax25"
+           style="cursor:default;user-select:none">
+        ◉ VHF AX.25 1200
+      </div>
+      <div style="font-size:10px;color:#58a8a8;
+                  font-family:var(--con-font);
+                  padding:2px 7px 6px;opacity:0.8">
+        ⬤ Always on — card {{ settings.direwolf_vhf_card }}
+      </div>
+      {% endif %}
+      <!-- Hub: HF AX.25 — always-on indicator if card configured -->
+      {% if settings.direwolf_hf_card is not none %}
+      <div class="t-btn active-hf" id="t-hf-ax25"
+           style="cursor:default;user-select:none">
+        ◉ HF AX.25 300
+      </div>
+      <div style="font-size:10px;color:#a88a58;
+                  font-family:var(--con-font);
+                  padding:2px 7px 6px;opacity:0.8">
+        ⬤ Always on — card {{ settings.direwolf_hf_card }}
+      </div>
+      {% endif %}
+      <!-- ARDOP still selectable on hub -->
+      <button class="t-btn" id="t-ardop-hf"
+              onclick="selectTransport('ardop-hf')">○ ARDOP HF</button>
+      {% else %}
+      <!-- Spoke: all transports mutually exclusive -->
+      <button class="t-btn" id="t-ardop-hf"
+              onclick="selectTransport('ardop-hf')">○ ARDOP HF</button>
+      <button class="t-btn" id="t-vhf-ax25"
+              onclick="selectTransport('vhf-ax25')">○ VHF AX.25 1200</button>
+      <button class="t-btn" id="t-hf-ax25"
+              onclick="selectTransport('hf-ax25')">○ HF AX.25 300</button>
+      {% endif %}
     </div>
 
-    <!-- FreeDV mode selector (visible only when FreeDV transport active) -->
-    <div class="sb-section" id="fdv-mode-panel" style="display:none">
-      <div class="sb-title">FreeDV Mode</div>
-      <button class="t-btn active" id="fdv-datac1"
-              onclick="setFreeDVMode('DATAC1')">◉ DATAC1</button>
-      <button class="t-btn" id="fdv-announce"
-              onclick="fillInput('/announce ')"
-              style="margin-top:6px">📢 /announce</button>
+    <!-- Active Sessions panel (hub only) -->
+    {% if settings.role == 'hub' %}
+    <div class="sb-section" id="session-section">
+      <div class="sb-title">
+        Active Sessions
+        <span class="sb-badge" id="session-count">0</span>
+      </div>
+      <div id="session-panel">
+        <div id="session-empty">No spokes connected</div>
+      </div>
     </div>
+    {% endif %}
 
     <!-- Connection info -->
     <div class="sb-section">
@@ -411,43 +424,42 @@
       <div class="sb-info">
         <div><span class="lbl">Hub: </span><span id="sb-hub">—</span></div>
         <div><span class="lbl">Port:</span><span id="sb-port"> —</span></div>
-        <div><span class="lbl">Role:</span>
-          <span id="sb-role">
-            {{ settings.role|upper if settings.role else ' —' }}
-          </span>
+        <div><span class="lbl">Role:</span><span id="sb-role"> {{ settings.role|upper if settings.role else '—' }}</span></div>
+      </div>
+    </div>
+
+    <!-- Recent Connections -->
+    <div class="sb-section">
+      <div class="sb-title">Recent Connections</div>
+      <div id="recent-list">
+        <div style="color:var(--con-dim);font-size:10px;padding:4px 2px">
+          No recent connections
         </div>
       </div>
     </div>
 
-    <!-- Quick commands -->
+    <!-- Quick Commands -->
     <div class="sb-section">
       <div class="sb-title">Quick Commands</div>
-      <span class="qcmd" onclick="fillInput('/connect ')">/connect</span>
+      <span class="qcmd" onclick="fillInput('/clear')">/clear</span>
       <span class="qcmd" onclick="fillInput('/auth ')">/auth</span>
       <span class="qcmd" onclick="fillInput('/retrieve')">/retrieve</span>
       <span class="qcmd" onclick="fillInput('/files')">/files</span>
       <span class="qcmd" onclick="fillInput('/send ')">/send</span>
-      <span class="qcmd" onclick="fillInput('/bul ')">/bul</span>
-      <span class="qcmd" onclick="fillInput('/announce ')">/announce</span>
-      <span class="qcmd" onclick="fillInput('/download ')">/download</span>
-      <span class="qcmd" onclick="fillInput('/whoami')">/whoami</span>
-      <span class="qcmd" onclick="fillInput('/passwd ')">/passwd</span>
       <span class="qcmd" onclick="fillInput('/disconnect')">/disconnect</span>
+      {% if settings.role == 'hub' %}
+      <span class="qcmd" onclick="fillInput('/wall ')">/wall</span>
+      {% endif %}
       <span class="qcmd" onclick="toggleHelp()">/help</span>
     </div>
 
   </div>
 </div>
 
-<!-- ── Footer ──────────────────────────────────────────────── -->
+<!-- ── Footer ───────────────────────────────────────────────── -->
 <div id="footer">
-  <span>
-    <kbd>Enter</kbd> Send &nbsp;
-    <kbd>↑</kbd><kbd>↓</kbd> History &nbsp;
-    <kbd>Ctrl+H</kbd> Help
-  </span>
-  <span>HF-256 v{{ system_info.version or '2.0.0' }}
-    &bull; {{ system_info.hostname }}</span>
+  <span><kbd>Enter</kbd> Send &nbsp;<kbd>↑</kbd><kbd>↓</kbd> History &nbsp;<kbd>Ctrl+H</kbd> Help</span>
+  <span>HF-256 v{{ system_info.version or '0.1.0' }} &bull; {{ system_info.hostname }}</span>
 </div>
 
 <script>
@@ -460,45 +472,36 @@ const ST = {
   hubAddress:    "{{ settings.hub_address or '' }}",
   encEnabled:    {{ 'true' if settings.encryption_enabled else 'false' }},
   transport:     "tcp",
-  hybridMode:    false,   // true = TCP server runs alongside radio transport
-  connState:     0,   // 0=off 1=connecting 2=connected
+  connState:     0,      // 0=off 1=connecting 2=connected
   remoteCall:    null,
   authenticated: {{ "true" if settings.role == "hub" else "false" }},
   helpVisible:   false,
   ws:            null,
   wsRetryTimer:  null,
   history:       [],
-  histIdx:       -1
+  histIdx:       -1,
+  sessions:      [],     // current session list (hub only)
+  sessionPollTimer: null
 };
 
 // ================================================================
 // Helpers
 // ================================================================
 function ts() {
-  return new Date().toLocaleTimeString("en-US",
-    {hour:"2-digit", minute:"2-digit", hour12:false});
+  return new Date().toLocaleTimeString("en-US", {hour:"2-digit",minute:"2-digit",hour12:false});
 }
-
 function esc(s) {
-  return String(s)
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
 
 const out = document.getElementById("console-out");
-
-function scrollDown() {
-  out.scrollTop = out.scrollHeight;
-}
+function scrollDown() { out.scrollTop = out.scrollHeight; }
 
 function addSys(text) {
   const d = document.createElement("div");
   d.className = "msg";
-  d.innerHTML =
-    `<span class="msg-ts">${ts()}</span> ` +
-    `<span class="msg-star">★</span> ` +
-    `<span class="msg-sys">${esc(text)}</span>`;
-  out.appendChild(d);
-  scrollDown();
+  d.innerHTML = `<span class="msg-ts">${ts()}</span> <span class="msg-star">★</span> <span class="msg-sys">${esc(text)}</span>`;
+  out.appendChild(d); scrollDown();
 }
 
 function addMsg(sender, text, outgoing) {
@@ -511,12 +514,8 @@ function addMsg(sender, text, outgoing) {
   const d = document.createElement("div");
   d.className = "msg " + (outgoing ? "msg-out" : "msg-in");
   const arrow = outgoing ? "→" : "←";
-  d.innerHTML =
-    `<span class="msg-ts">${ts()}</span> ` +
-    `<span class="msg-arrow">${arrow}</span> ` +
-    `<span class="msg-call">${esc(sender)}:</span> ${esc(text)}`;
-  out.appendChild(d);
-  scrollDown();
+  d.innerHTML = `<span class="msg-ts">${ts()}</span> <span class="msg-arrow">${arrow}</span> <span class="msg-call">${esc(sender)}:</span> ${esc(text)}`;
+  out.appendChild(d); scrollDown();
 }
 
 // ================================================================
@@ -526,20 +525,17 @@ function updateStatus() {
   document.getElementById("s-call").textContent = ST.mycall;
 
   const tLabels = {
-    "tcp":      "TCP",
-    "freedv":   "FreeDV",
-    "ardop-fm": "ARDOP FM"
+    "tcp":"TCP", "ardop-hf":"ARDOP HF", "ardop-fm":"ARDOP FM",
+    "vhf-ax25":"VHF AX.25", "hf-ax25":"HF AX.25"
   };
   const tEl = document.getElementById("s-transport");
-  tEl.textContent = tLabels[ST.transport] || "TCP";
-  tEl.className = ST.connState === 2
-    ? "s-part s-transport-connected"
-    : "s-part s-transport";
+  tEl.textContent = tLabels[ST.transport] || ST.transport;
+  tEl.className = ST.connState === 2 ? "s-part s-transport-connected" : "s-part s-transport";
 
   const connEl = document.getElementById("s-conn");
   if (ST.connState === 2) {
     connEl.className = "s-part s-conn-ok";
-    connEl.textContent = "⬤ " + (ST.remoteCall || "?");
+    connEl.textContent = "⬤ " + (ST.remoteCall || "connected");
   } else if (ST.connState === 1) {
     connEl.className = "s-part s-conn-busy";
     connEl.textContent = "⬤ Connecting...";
@@ -549,143 +545,293 @@ function updateStatus() {
   }
 
   const encEl = document.getElementById("s-enc");
-  if (ST.encEnabled) {
-    encEl.className = "s-part s-enc-on";
-    encEl.textContent = "🔒 Encrypted";
-  } else {
-    encEl.className = "s-part s-enc-off";
-    encEl.textContent = "🔓 Plaintext";
-  }
+  encEl.className = "s-part " + (ST.encEnabled ? "s-enc-on" : "s-enc-off");
+  encEl.textContent = ST.encEnabled ? "🔒 Encrypted" : "🔓 Plaintext";
 
   const authEl = document.getElementById("s-auth");
-  if (ST.authenticated) {
-    authEl.className = "s-part s-auth-ok";
-    authEl.textContent = "✓ Auth";
-  } else {
-    authEl.className = "s-part s-auth-no";
-    authEl.textContent = "? Auth";
+  authEl.className = "s-part " + (ST.authenticated ? "s-auth-ok" : "s-auth-no");
+  authEl.textContent = ST.authenticated ? "✓ Auth" : "? Auth";
+
+  document.getElementById("sb-hub").textContent = ST.remoteCall || (ST.hubAddress || "—");
+  document.getElementById("sb-port").textContent = " 14256";
+
+  // Hub session counter
+  const sesEl = document.getElementById("s-sessions");
+  if (sesEl) {
+    const n = ST.sessions.length;
+    sesEl.textContent = `⬡ ${n} session${n === 1 ? "" : "s"}`;
+  }
+}
+
+// ================================================================
+// Session panel (hub only)
+// ================================================================
+function updateSessionPanel(sessions) {
+  ST.sessions = sessions || [];
+  const panel  = document.getElementById("session-panel");
+  const badge  = document.getElementById("session-count");
+  const empty  = document.getElementById("session-empty");
+  if (!panel) return;
+
+  badge.textContent = sessions.length;
+
+  if (sessions.length === 0) {
+    panel.innerHTML = '<div id="session-empty">No spokes connected</div>';
+    updateStatus(); return;
   }
 
-  document.getElementById("sb-hub").textContent =
-    ST.remoteCall || (ST.hubAddress || "—");
-  document.getElementById("sb-port").textContent = " 14256";
+  const rows = sessions.map(s => {
+    const callCls = s.auth ? "sess-call" : "sess-call unauth";
+    const call    = esc(s.callsign || "?");
+    const type    = esc(s.transport || "?");
+    const idle    = s.idle_s + "s";
+    const auth    = s.auth ? "" : " ◌";
+    return `<div class="sess-row">
+      <span class="${callCls}">${call}${auth}</span>
+      <span class="sess-type">${type}</span>
+      <span class="sess-idle">${idle}</span>
+      <span class="sess-kick" title="Disconnect ${call}" onclick="kickSession('${esc(s.id)}','${call}')">✕</span>
+    </div>`;
+  });
+  panel.innerHTML = rows.join("");
+  updateStatus();
 }
+
+function kickSession(sid, callsign) {
+  if (!confirm(`Disconnect ${callsign}?`)) return;
+  fetch("/api/hub/disconnect", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({session_id: sid})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) addSys(`Disconnected ${callsign}`);
+    else addSys(`Kick failed: ${d.error || "unknown"}`);
+    requestSessionList();
+  }).catch(() => addSys("Kick request failed"));
+}
+
+function requestSessionList() {
+  wsSend({type:"hub_sessions"});
+}
+
+function startSessionPoll() {
+  if (ST.role !== "hub") return;
+  if (ST.sessionPollTimer) clearInterval(ST.sessionPollTimer);
+  ST.sessionPollTimer = setInterval(requestSessionList, 10000);
+}
+
+// ================================================================
+// Broadcast bar
+// ================================================================
+function sendBroadcast() {
+  const inp  = document.getElementById("bcast-input");
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = "";
+  wsSend({type:"hub_broadcast", text: text});
+  addMsg(ST.mycall + " [WALL]", text, true);
+}
+
+document.getElementById("bcast-input").addEventListener("keydown", function(e) {
+  if (e.key === "Enter") sendBroadcast();
+});
 
 // ================================================================
 // Transport selector
 // ================================================================
-const T_IDS = ["t-tcp","t-freedv","t-ardop-fm"];
+const ALL_T_IDS = ["t-tcp","t-ardop-hf","t-vhf-ax25","t-hf-ax25"];
 const T_LABELS = {
   "tcp":      "◉ TCP / Internet",
-  "freedv":   "◉ FreeDV HF",
-  "ardop-fm": "◉ ARDOP FM"
+  "ardop-hf": "◉ ARDOP HF",
+  "vhf-ax25": "◉ VHF AX.25 1200",
+  "hf-ax25":  "◉ HF AX.25 300"
 };
 const T_INACTIVE = {
   "tcp":      "○ TCP / Internet",
-  "freedv":   "○ FreeDV HF",
-  "ardop-fm": "○ ARDOP FM"
+  "ardop-hf": "○ ARDOP HF",
+  "vhf-ax25": "○ VHF AX.25 1200",
+  "hf-ax25":  "○ HF AX.25 300"
 };
 
 function selectTransport(t) {
+  // Hub: VHF and HF AX.25 are always-on — they are status indicators
+  // not selectable transports. The hub never "picks" a radio transport;
+  // both run simultaneously and are attached automatically on page load.
+  if (ST.role === "hub" && (t === "vhf-ax25" || t === "hf-ax25")) {
+    return;
+  }
   ST.transport = t;
-  T_IDS.forEach(id => {
+  const isHub = (ST.role === "hub");
+
+  ALL_T_IDS.forEach(function(id) {
     const key = id.replace("t-","");
     const btn = document.getElementById(id);
+    // On hub, VHF/HF are divs (always-on indicators), not buttons — skip styling
+    if (!btn || (ST.role === "hub" && (key === "vhf-ax25" || key === "hf-ax25"))) return;
+
     if (key === t) {
+      // Selected transport: highlight with the correct active class
+      let cls = "t-btn active";
+      if (key === "vhf-ax25") cls = "t-btn active-vhf";
+      if (key === "hf-ax25")  cls = "t-btn active-hf";
+      btn.className = cls;
+      btn.textContent = T_LABELS[key] || ("◉ " + key);
+
+    } else if (isHub && key === "tcp") {
+      // Hub: TCP button always stays green (always on) even when other
+      // transports are selected — it's not an exclusive choice for hubs.
       btn.className = "t-btn active";
-      btn.textContent = T_LABELS[key];
+      btn.textContent = T_LABELS["tcp"];
+
     } else {
+      // All other inactive buttons
       btn.className = "t-btn";
-      btn.textContent = T_INACTIVE[key];
+      btn.textContent = T_INACTIVE[key] || ("○ " + key);
     }
   });
-  const labels = {
-    "tcp":      "TCP/Internet",
-    "freedv":   "FreeDV HF",
-    "ardop-fm": "ARDOP FM"
-  };
-  // In hybrid mode, TCP server runs permanently — clicking TCP is a no-op
-  if (ST.hybridMode && t === "tcp") {
-    addSys("ℹ TCP is already running via Hybrid Mode");
-    return;
-  }
-  addSys("Transport: " + labels[t] + (ST.hybridMode ? " (+ TCP via Hybrid)" : ""));
-  if (t !== "tcp") {
-    addSys("Note: " + labels[t] +
-           " transport — ensure modem service is running");
-  }
-  // Show FreeDV mode panel only when FreeDV transport is selected,
-  // and highlight DATAC1 as the active default when panel opens.
-  const fdvPanel = document.getElementById("fdv-mode-panel");
-  if (fdvPanel) {
-    fdvPanel.style.display = (t === "freedv") ? "block" : "none";
-    if (t === "freedv") {
-      const d1btn = document.getElementById("fdv-datac1");
-      if (d1btn) d1btn.className = "t-btn active";
-      if (!ST.freedvMode) {
-        ST.freedvMode = "DATAC1";
-        wsSend({type:"set_freedv_mode", mode: "DATAC1"});
-      }
-    }
-  }
 
   updateStatus();
-  wsSend({type:"set_transport", transport: t});
-}
 
-// ================================================================
-// Hybrid Mode toggle
-// ================================================================
-function toggleHybrid() {
-  if (ST.role !== "hub") {
-    addSys("⚠ Hybrid mode is a Hub function — not available on spoke stations");
+  // Hub: TCP is always on — confirm it's active, never stop it
+  if (t === "tcp" && isHub) {
+    addSys("TCP/Internet — always active on port 14256");
+    wsSend({type:"set_transport", transport: "tcp"});
     return;
   }
-  ST.hybridMode = !ST.hybridMode;
-  const btn = document.getElementById("t-hybrid");
-  if (ST.hybridMode) {
-    btn.className  = "t-btn active";
-    btn.textContent = "◉ Hybrid Mode";
-    addSys("✓ Hybrid mode ON — TCP server will remain active alongside radio transport");
-    addSys("  Switch FreeDV or ARDOP FM freely — TCP stays running");
-    // Start the TCP server on the hub
-    wsSend({type:"set_hybrid", enabled: true});
-  } else {
-    btn.className  = "t-btn";
-    btn.textContent = "○ Hybrid Mode";
-    addSys("Hybrid mode OFF — transports are mutually exclusive");
-    wsSend({type:"set_hybrid", enabled: false});
+
+  // AX.25 — Direwolf handles it; server attaches on demand
+  if (t === "vhf-ax25" || t === "hf-ax25") {
+    const lbl = (T_LABELS[t]||t).replace("◉ ","");
+    if (!isHub) {
+      addSys(lbl + " selected — any active connection closed");
+    }
+    addSys(lbl + " — attaching Direwolf...");
+    wsSend({type:"set_transport", transport: t});
+    return;
+  }
+
+  // TCP on spoke — mutually exclusive, closes radio transport
+  if (t === "tcp" && !isHub) {
+    addSys("TCP/Internet selected — use /connect <HUB-IP> to connect");
+    wsSend({type:"set_transport", transport: "tcp"});
+    return;
+  }
+
+  // ARDOP — modem process starts on the Pi
+  if (!isHub) {
+    addSys((T_LABELS[t]||t).replace("◉ ","") + " selected — any active connection closed");
+  }
+  addSys((T_LABELS[t]||t).replace("◉ ","") +
+         " — starting modem, please wait for confirmation...");
+  if (!wsSend({type:"set_transport", transport: t})) {
+    addSys("⚠ Console not linked to Pi — transport switch will apply on reconnect");
   }
 }
 
 // ================================================================
-// FreeDV mode selector
+// Recent Connections  (persistent via localStorage)
 // ================================================================
-const FDV_MODES = ["DATAC1"];
+const RC_KEY     = "hf256_recent_connections";
+const RC_MAX     = 8;   // max entries to store
 
-function setFreeDVMode(mode) {
-  // Highlight selected button
-  FDV_MODES.forEach(function(m) {
-    const btn = document.getElementById("fdv-" + m.toLowerCase());
-    if (btn) {
-      btn.className = (m === mode) ? "t-btn active" : "t-btn";
-    }
-  });
-  ST.freedvMode = mode;
-  addSys("FreeDV mode: " + mode);
-  wsSend({type:"set_freedv_mode", mode: mode});
+function rcLoad() {
+  try {
+    return JSON.parse(localStorage.getItem(RC_KEY) || "[]");
+  } catch(e) { return []; }
 }
 
-// ================================================================
-// WebSocket — connects to /console/ws on the same Flask server
+function rcSave(list) {
+  try { localStorage.setItem(RC_KEY, JSON.stringify(list)); } catch(e) {}
+}
+
+/**
+ * Add or bump a connection to the top of the recent list.
+ * @param {string} target   - callsign or IP address
+ * @param {string} transport - e.g. "vhf-ax25", "tcp"
+ */
+function rcAdd(target, transport) {
+  let list = rcLoad();
+  // Remove any existing entry for the same target+transport so it
+  // moves to the top rather than appearing twice.
+  list = list.filter(function(e) {
+    return !(e.target === target && e.transport === transport);
+  });
+  list.unshift({
+    target,
+    transport,
+    ts: Date.now()
+  });
+  if (list.length > RC_MAX) list = list.slice(0, RC_MAX);
+  rcSave(list);
+  rcRender();
+}
+
+/** Render the recent-connections list in the sidebar. */
+function rcRender() {
+  const list = rcLoad();
+  const el   = document.getElementById("recent-list");
+  if (!el) return;
+
+  if (list.length === 0) {
+    el.innerHTML = '<div style="color:var(--con-dim);font-size:10px;padding:4px 2px">No recent connections</div>';
+    return;
+  }
+
+  const tNames = {
+    "tcp":      "TCP",
+    "ardop-hf": "ARDOP HF",
+    "vhf-ax25": "VHF 1200",
+    "hf-ax25":  "HF 300"
+  };
+
+  el.innerHTML = list.map(function(e) {
+    const label = tNames[e.transport] || e.transport;
+    const ago   = rcAgo(e.ts);
+    // Use single quotes for the onclick attribute so JSON.stringify's double
+    // quotes don't break the HTML attribute boundary.
+    return '<div class="recent-entry" onclick=\'rcConnect(' +
+           JSON.stringify(e.target) + ',' +
+           JSON.stringify(e.transport) + ')\' title="' +
+           esc(e.target) + ' via ' + esc(label) + ' (' + ago + ')">' +
+           '<span class="recent-call">' + esc(e.target) + '</span>' +
+           '<span class="recent-via">' + esc(label) + '</span>' +
+           '</div>';
+  }).join("");
+}
+
+function rcAgo(ts) {
+  const secs = Math.round((Date.now() - ts) / 1000);
+  if (secs < 60)   return "just now";
+  if (secs < 3600) return Math.round(secs/60) + "m ago";
+  if (secs < 86400)return Math.round(secs/3600) + "h ago";
+  return Math.round(secs/86400) + "d ago";
+}
+
+/**
+ * Click handler on a recent-connection chip.
+ * Switches to the right transport then fills the input with /connect <target>.
+ */
+function rcConnect(target, transport) {
+  // 1. Switch transport if needed — this updates ST.transport and the buttons
+  if (ST.transport !== transport) {
+    selectTransport(transport);
+  }
+
+  // 2. Set the input value
+  const inp = document.getElementById("msg-input");
+  if (!inp) return;
+  inp.value = "/connect " + target;
+
+  // 3. Submit immediately — same path as the user typing /connect and pressing Enter
+  submitInput();
+}
+
+
 // ================================================================
 function wsConnect() {
   if (ST.ws && ST.ws.readyState <= 1) return;
-
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const url   = proto + "://" + location.host + "/console/ws";
-
-  ST.ws = new WebSocket(url);
+  ST.ws = new WebSocket(proto + "://" + location.host + "/console/ws");
 
   ST.ws.onopen = function() {
     document.getElementById("ws-badge").textContent = "⬤ Connected";
@@ -693,11 +839,36 @@ function wsConnect() {
     document.getElementById("s-ws").textContent = "⬤ Linked to Pi";
     document.getElementById("s-ws").className   = "s-part s-ws-ok";
     addSys("Console connected");
-    // Tell server our current state
-    wsSend({type:"hello", call: ST.mycall,
-            transport: ST.transport,
-            encrypt: ST.encEnabled,
-            authenticated: ST.authenticated});
+    wsSend({type:"hello", call:ST.mycall, transport:ST.transport, encrypt:ST.encEnabled, authenticated:ST.authenticated});
+    if (ST.role === "hub") {
+      startSessionPoll();
+      requestSessionList();
+      // Hub: auto-attach all configured radio transports on connect.
+      // VHF and HF run simultaneously — no user action required.
+      // Uses a retry loop because _hub_core may still be initialising
+      // at portal startup — the first attach attempt may get "Hub core
+      // not initialised". Retry every 5s for up to 60s.
+      const HUB_VHF_CARD = {{ settings.direwolf_vhf_card if settings.direwolf_vhf_card is not none else 'null' }};
+      const HUB_HF_CARD  = {{ settings.direwolf_hf_card  if settings.direwolf_hf_card  is not none else 'null' }};
+      if (HUB_VHF_CARD !== null || HUB_HF_CARD !== null) {
+        const _attachTransport = HUB_HF_CARD !== null ? "hf-ax25" : "vhf-ax25";
+        let   _attachAttempts  = 0;
+        const _maxAttachTries  = 12;  // 12 × 5s = 60s max
+        function _hubAutoAttach() {
+          _attachAttempts++;
+          wsSend({type:"set_transport", transport: _attachTransport});
+          // If we get "Hub core not initialised" back, the sys message handler
+          // will call _scheduleHubReattach() to retry after 5s.
+        }
+        // Expose retry so the message handler can trigger it
+        window._scheduleHubReattach = function() {
+          if (_attachAttempts < _maxAttachTries) {
+            setTimeout(_hubAutoAttach, 5000);
+          }
+        };
+        setTimeout(_hubAutoAttach, 2000);  // initial delay for hello handshake
+      }
+    }
   };
 
   ST.ws.onmessage = function(evt) {
@@ -711,11 +882,9 @@ function wsConnect() {
     document.getElementById("s-ws").className   = "s-part s-ws-off";
     document.getElementById("s-ws").textContent = "⬤ Linked to Pi";
     if (ST.connState !== 0) {
-      ST.connState = 0; ST.remoteCall = null;
-      ST.authenticated = false; updateStatus();
+      ST.connState = 0; ST.remoteCall = null; ST.authenticated = false; updateStatus();
       addSys("Connection lost — WebSocket closed");
     }
-    // Auto-reconnect after 5s
     ST.wsRetryTimer = setTimeout(wsConnect, 5000);
   };
 
@@ -725,10 +894,7 @@ function wsConnect() {
 }
 
 function wsSend(obj) {
-  if (ST.ws && ST.ws.readyState === 1) {
-    ST.ws.send(JSON.stringify(obj));
-    return true;
-  }
+  if (ST.ws && ST.ws.readyState === 1) { ST.ws.send(JSON.stringify(obj)); return true; }
   return false;
 }
 
@@ -739,81 +905,142 @@ function handleWsMsg(msg) {
   switch(msg.type) {
 
     case "connected":
-      ST.connState  = 2;
-      ST.remoteCall = msg.remote_call || null;
-      updateStatus();
+      ST.connState  = 2; ST.remoteCall = msg.remote_call || null; updateStatus();
       addSys("✓ Connected to " + (msg.remote_call || "hub"));
+      // For radio transports (AX.25, ARDOP) show auth guidance immediately.
+      // TCP spoke: same guidance. Hub: no auth needed.
+      if (ST.role !== "hub") {
+        if (msg.conn_ack) {
+          // Hub's CONN_ACK confirms bidirectional radio link — tell user to auth
+          addSys("  Radio link confirmed — type /auth <password> to continue");
+        } else {
+          // TCP connected or AX.25 connected before CONN_ACK arrives
+          addSys("  Type /auth <password> to authenticate");
+        }
+        // Auto-focus input box so user can type immediately
+        const inp = document.getElementById("msg-input");
+        if (inp) { inp.focus(); inp.value = "/auth "; }
+      }
       break;
 
     case "connecting":
-      ST.connState = 1; updateStatus();
-      break;
+      ST.connState = 1; updateStatus(); break;
 
     case "disconnected":
-      ST.connState = 0; ST.remoteCall = null;
-      ST.authenticated = false; updateStatus();
-      addSys("Disconnected");
+      ST.connState = 0; ST.remoteCall = null; ST.authenticated = false; updateStatus();
+      addSys("Disconnected" + (msg.reason ? " — " + msg.reason : ""));
       break;
 
     case "chat":
-      // Suppress hub echo of our own sent messages — already shown as local echo
-      if (msg.sender && msg.sender.toUpperCase() === ST.mycall.toUpperCase()) break;
+      if (msg.sender && msg.sender.toUpperCase() === ST.mycall.toUpperCase()) {
+        if (msg.local) {
+          // Local echo from backend — already shown as "→" by the JS input
+          // handler. Discard silently to avoid duplicates.
+          break;
+        }
+        // Hub echo received over radio — this is the application-layer ACK
+        // confirming the hub decoded, decrypted, and processed the message.
+        // Only show on radio transports — TCP delivery is already reliable.
+        const isRadio = ST.transport === "vhf-ax25" || ST.transport === "hf-ax25";
+        if (isRadio) {
+          const preview = (msg.text || "").substring(0, 40) +
+                          ((msg.text || "").length > 40 ? "…" : "");
+          addSys("✓ Hub received: " + preview);
+        }
+        break;
+      }
       addMsg(msg.sender, msg.text, false);
       break;
 
     case "system":
       addSys(msg.text);
+      // Hub auto-attach retry: if hub core wasn't ready, schedule another attempt
+      if (ST.role === "hub" &&
+          msg.text && msg.text.indexOf("Hub core not initialised") !== -1 &&
+          typeof window._scheduleHubReattach === "function") {
+        window._scheduleHubReattach();
+      }
       break;
 
     case "auth_ok":
-      ST.authenticated = true; updateStatus();
-      addSys("✓ Authenticated");
-      break;
+      ST.authenticated = true; updateStatus(); addSys("✓ Authenticated"); break;
 
     case "auth_fail":
-      addSys("✗ Auth failed: " + (msg.reason || "invalid password"));
-      break;
+      addSys("✗ Auth failed: " + (msg.reason || "invalid password")); break;
 
     case "file_list":
-      displayFileList(msg.files || {});
-      break;
+      displayFileList(msg.files || {}); break;
 
     case "download_progress":
-      addSys("↓ " + msg.filename + ": " +
-             Math.round(msg.progress * 100) + "% " +
-             "(" + msg.done + "/" + msg.total + " chunks)");
+      // Accumulate hex chunks in memory — assembled on download_complete
+      if (!ST._dlBufs) ST._dlBufs = {};
+      if (!ST._dlBufs[msg.filename]) ST._dlBufs[msg.filename] = [];
+      ST._dlBufs[msg.filename].push(msg.data || "");
+      if (msg.done === 1 || msg.total === 1 || msg.done % 4 === 0 || msg.done === msg.total) {
+        addSys("↓ " + msg.filename + ": " + Math.round(msg.progress*100) + "% (" + msg.done + "/" + msg.total + " chunks)");
+      }
       break;
 
     case "download_complete":
-      addSys("✓ Download complete: " + msg.filename);
+      (function() {
+        const fname = msg.filename;
+        const hexChunks = (ST._dlBufs && ST._dlBufs[fname]) || [];
+        const hexStr    = hexChunks.join("");
+        addSys("✓ Download complete: " + fname + " — saving to Pi...");
+        if (hexStr) {
+          fetch("/api/downloads/save", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              filename: fname,
+              data_hex: hexStr,
+              hub:      ST.remoteCall || "unknown"
+            })
+          })
+          .then(r => r.json())
+          .then(d => {
+            if (d.ok) {
+              addSys("✓ " + fname + " saved (" + (d.size/1024).toFixed(1) + " KB) — view in Downloads");
+            } else {
+              addSys("✗ Save failed: " + (d.error || "unknown error"));
+            }
+            if (ST._dlBufs) delete ST._dlBufs[fname];
+          })
+          .catch(e => addSys("✗ Save error: " + e));
+        } else {
+          addSys("⚠ No chunk data received for " + fname);
+        }
+      })();
       break;
 
     case "error":
-      addSys("✗ " + (msg.text || "Unknown error"));
-      break;
-
-    case "announce": {
-      // Broadcast from a FreeDV station — display with distinct style
-      const ann = document.createElement("div");
-      ann.className = "msg";
-      ann.innerHTML =
-        '<span class="msg-ts">' + ts() + '</span> ' +
-        '<span style="color:var(--orange)">&#128226; ANNOUNCE</span> ' +
-        '<span style="color:var(--orange);font-weight:600">' +
-          esc(msg.src || "?") + '</span>: ' +
-        '<span style="color:var(--con-yellow)">' +
-          esc(msg.text || "") + '</span>';
-      out.appendChild(ann);
-      scrollDown();
-      break;
-    }
+      addSys("✗ " + (msg.text || "Unknown error")); break;
 
     case "modem_error":
-      addSys("✗ Modem: " + (msg.text || "unknown error"));
-      break;
+      addSys("✗ Modem: " + (msg.text || "unknown error")); break;
+
+    // ── Multi-session hub events ────────────────────────────────
+    case "session_list":
+      updateSessionPanel(msg.sessions || []); break;
+
+    case "session_open":
+      addSys(`★ ${msg.callsign || "?"} connecting [${msg.transport || "?"}]`);
+      requestSessionList(); break;
+
+    case "session_close":
+      addSys(`★ ${msg.callsign || "?"} disconnected`);
+      requestSessionList(); break;
+
+    case "spoke_authenticated":
+      addSys(`✓ ${msg.callsign} authenticated [${msg.transport || "?"}]`);
+      requestSessionList(); break;
+
+    case "announce":
+      addSys(`📡 ANNOUNCE from ${msg.src}: ${msg.text}`); break;
 
     default:
-      addSys("[server] " + JSON.stringify(msg));
+      // Avoid spamming the console with unknown message types
+      console.debug("WS unhandled:", msg.type, msg);
   }
 }
 
@@ -822,9 +1049,7 @@ function handleWsMsg(msg) {
 // ================================================================
 function displayFileList(files) {
   const keys = Object.keys(files);
-  if (keys.length === 0) {
-    addSys("No files available on hub"); return;
-  }
+  if (keys.length === 0) { addSys("No files available on hub"); return; }
   addSys("─── Available Files (" + keys.length + ") ───────────────────");
   keys.forEach(function(fname) {
     const info = files[fname];
@@ -844,59 +1069,78 @@ function handleCommand(raw) {
   const command = parts[0].toLowerCase();
   const args    = parts.slice(1).join(" ");
 
-  if (command === "/help") {
-    toggleHelp(); return;
+  if (command === "/help")  { toggleHelp(); return; }
+
+  if (command === "/clear") {
+    out.innerHTML = "";
+    if (ST.helpVisible) { ST.helpVisible = false; document.getElementById("help-panel").style.display = "none"; }
+    addSys("Console cleared"); return;
   }
 
   if (command === "/whoami") {
-    const tNames = {tcp:"TCP",freedv:"FreeDV HF",
-                    "ardop-fm":"ARDOP FM"};
+    const tNames = {"tcp":"TCP","ardop-hf":"ARDOP HF","ardop-fm":"ARDOP FM","vhf-ax25":"VHF AX.25","hf-ax25":"HF AX.25"};
     addSys("Callsign:   " + ST.mycall);
-    addSys("Transport:  " + (tNames[ST.transport] || ST.transport) +
-           (ST.transport === "freedv" && ST.freedvMode ?
-            " (" + ST.freedvMode + ")" : ""));
-    addSys("Connection: " +
-           (ST.connState === 2 ? "Connected to " + ST.remoteCall :
-            ST.connState === 1 ? "Connecting..." : "Disconnected"));
+    addSys("Transport:  " + (tNames[ST.transport] || ST.transport));
+    addSys("Connection: " + (ST.connState===2?"Connected to "+ST.remoteCall:ST.connState===1?"Connecting...":"Disconnected"));
     addSys("Encryption: " + (ST.encEnabled ? "ON" : "OFF"));
-    addSys("Auth:       " + (ST.role === "hub" ? "Hub (no auth required)" :
-           ST.authenticated ? "Yes" : "No"));
+    addSys("Auth:       " + (ST.role==="hub"?"Hub (auto)":(ST.authenticated?"Yes":"No")));
+    if (ST.role === "hub") addSys("Sessions:   " + ST.sessions.length + " active");
+    return;
+  }
+
+  if (command === "/sessions") {
+    if (ST.role !== "hub") { addSys("✗ Hub-only command"); return; }
+    requestSessionList();
+    const rows = ST.sessions.map(s => `  ${s.callsign||"?"} [${s.transport}] idle=${s.idle_s}s ${s.auth?"":"(unauth)"}`);
+    if (rows.length === 0) addSys("No active sessions");
+    else { addSys("Active sessions (" + rows.length + "):"); rows.forEach(addSys); }
+    return;
+  }
+
+  // /wall — hub broadcasts to all spokes
+  if (command === "/wall") {
+    if (ST.role !== "hub") { addSys("✗ Hub-only command"); return; }
+    if (!args) { addSys("Usage: /wall <message>"); return; }
+    wsSend({type:"hub_broadcast", text: args});
+    addMsg(ST.mycall + " [WALL]", args, true);
+    return;
+  }
+
+  // /kick — disconnect a spoke by callsign
+  if (command === "/kick") {
+    if (ST.role !== "hub") { addSys("✗ Hub-only command"); return; }
+    if (!args) { addSys("Usage: /kick <CALLSIGN>"); return; }
+    const target = args.split(/\s+/)[0].toUpperCase();
+    const s = ST.sessions.find(x => x.callsign === target);
+    if (!s) { addSys(`No active session for ${target}`); return; }
+    kickSession(s.id, target);
     return;
   }
 
   if (command === "/connect") {
-    const isCallsignTransport = (ST.transport === "ardop-fm" ||
-                                  ST.transport === "freedv");
+    const isCallsign = (ST.transport === "ardop-hf" || ST.transport === "ardop-fm" ||
+                        ST.transport === "vhf-ax25"  || ST.transport === "hf-ax25");
     if (!args) {
-      if (isCallsignTransport) {
-        const tName = ST.transport === "freedv" ? "FreeDV" :
-                      "ARDOP FM";
-        addSys("Usage: /connect <CALLSIGN>   (" + tName + " mode)");
-        addSys("  Example: /connect W1AW");
-      } else {
-        addSys("Usage: /connect <IP_ADDRESS> [port]");
-        addSys("  /connect 192.168.1.100");
-        addSys("  /connect 192.168.1.100 14256");
-      }
+      if (isCallsign) addSys("Usage: /connect <CALLSIGN>   (" + (T_LABELS[ST.transport]||"radio") + " mode)");
+      else { addSys("Usage: /connect <IP_ADDRESS> [port]"); addSys("  /connect 192.168.1.100 14256"); }
       return;
     }
-    if (isCallsignTransport) {
+    if (isCallsign) {
       const targetCall = args.split(/\s+/)[0].toUpperCase();
-      const tLabel = ST.transport === "freedv" ? "FreeDV" :
-                     ST.transport === "ardop-fm" ? "ARDOP FM" : "ARDOP HF";
-      document.getElementById("sb-hub").textContent  = targetCall;
+      document.getElementById("sb-hub").textContent = targetCall;
       document.getElementById("sb-port").textContent = "";
-      addSys("Calling " + targetCall + " via " + tLabel + " ...");
+      addSys("Calling " + targetCall + " via " + (T_LABELS[ST.transport]||ST.transport).replace("◉ ","") + " ...");
       ST.connState = 1; updateStatus();
+      rcAdd(targetCall, ST.transport);        // ← persist recent connection
       wsSend({type:"connect", target_call: targetCall});
     } else {
-      const cparts = args.split(/\s+/);
-      const host   = cparts[0];
-      const port   = cparts[1] ? parseInt(cparts[1]) : 14256;
-      document.getElementById("sb-hub").textContent  = host;
+      const cp = args.split(/\s+/);
+      const host = cp[0]; const port = cp[1] ? parseInt(cp[1]) : 14256;
+      document.getElementById("sb-hub").textContent = host;
       document.getElementById("sb-port").textContent = " " + port;
       addSys("Connecting to " + host + ":" + port + " ...");
       ST.connState = 1; updateStatus();
+      rcAdd(host, "tcp");                     // ← persist recent connection
       wsSend({type:"connect", host:host, port:port});
     }
     return;
@@ -904,121 +1148,67 @@ function handleCommand(raw) {
 
   if (command === "/disconnect") {
     wsSend({type:"disconnect"});
-    ST.connState = 0; ST.remoteCall = null;
-    ST.authenticated = false; updateStatus();
-    addSys("Disconnecting...");
-    return;
+    ST.connState = 0; ST.remoteCall = null; ST.authenticated = false; updateStatus();
+    addSys("Disconnecting..."); return;
   }
 
   if (command === "/auth") {
     if (!args) { addSys("Usage: /auth <password>"); return; }
-    if (ST.role !== "hub" && ST.connState !== 2) {
-      addSys("✗ Not connected — use /connect first"); return;
-    }
-    if (ST.authenticated) {
-      addSys("ℹ Already authenticated — use /whoami to check status");
-      return;
-    }
+    if (ST.role !== "hub" && ST.connState !== 2) { addSys("✗ Not connected — use /connect first"); return; }
+    if (ST.authenticated) { addSys("ℹ Already authenticated"); return; }
     wsSend({type:"auth", password:args});
-    if (ST.transport === "freedv" || ST.transport === "ardop-fm") {
-      addSys("Authenticating via " + (ST.transport === "freedv" ? "FreeDV" : "ARDOP FM") +
-             " — this takes 30-90 seconds over radio...");
-      addSys("  The hub must transmit the response back over the air.");
-    } else {
-      addSys("Authenticating...");
-    }
+    const isRadio = (ST.transport === "ardop-hf" || ST.transport === "ardop-fm" || ST.transport === "vhf-ax25" || ST.transport === "hf-ax25");
+    addSys(isRadio ? "Authenticating via radio — this may take 30-90 seconds..." : "Authenticating...");
     return;
   }
 
   if (command === "/send") {
     const sp = args.split(/\s+/);
-    if (sp.length < 2) {
-      addSys("Usage: /send <CALLSIGN> <message>"); return;
-    }
-    if (!ST.authenticated && ST.role !== "hub") {
-      addSys("✗ Must authenticate first — use /auth <password>"); return;
-    }
-    if (ST.role !== "hub" && ST.connState !== 2) {
-      addSys("✗ Not connected — use /connect first"); return;
-    }
-    const sendTo = sp[0].toUpperCase();
-    wsSend({type:"send", to: sendTo, text: sp.slice(1).join(" ")});
-    if (ST.role === "hub") {
-      addSys("Storing message locally...");
-    } else {
-      addSys("Transmitting to hub — waiting for confirmation...");
-    }
+    if (sp.length < 2) { addSys("Usage: /send <CALLSIGN> <message>"); return; }
+    if (!ST.authenticated && ST.role !== "hub") { addSys("✗ Must authenticate first"); return; }
+    if (ST.role !== "hub" && ST.connState !== 2) { addSys("✗ Not connected"); return; }
+    wsSend({type:"send", to: sp[0].toUpperCase(), text: sp.slice(1).join(" ")});
+    addSys(ST.role === "hub" ? "Storing message locally..." : "Transmitting to hub...");
     return;
   }
 
   if (command === "/retrieve") {
-    if (!ST.authenticated && ST.role !== "hub") {
-      addSys("✗ Must authenticate first"); return;
-    }
-    if (ST.role !== "hub" && ST.connState !== 2) {
-      addSys("✗ Not connected — use /connect first"); return;
-    }
+    if (!ST.authenticated && ST.role !== "hub") { addSys("✗ Must authenticate first"); return; }
+    if (ST.role !== "hub" && ST.connState !== 2) { addSys("✗ Not connected"); return; }
     wsSend({type:"retrieve"});
-    addSys(ST.role === "hub" ? "Reading local messages..." : "Requesting stored messages...");
-    return;
+    addSys(ST.role === "hub" ? "Reading local messages..." : "Requesting stored messages..."); return;
   }
 
   if (command === "/bul") {
     if (!args) { addSys("Usage: /bul <message>"); return; }
-    if (!ST.authenticated && ST.role !== "hub") {
-      addSys("✗ Must authenticate first"); return;
-    }
+    if (!ST.authenticated && ST.role !== "hub") { addSys("✗ Must authenticate first"); return; }
     wsSend({type:"bulletin", text:args});
-    if (ST.role === "hub") {
-      // Hub stores locally — confirmation comes back synchronously
-      addSys("Storing bulletin for all users...");
-    } else {
-      // Spoke sends over air — confirmation comes via STORE_ACK from hub
-      addSys("Sending bulletin to hub (waiting for confirmation)...");
-    }
-    return;
+    addSys(ST.role === "hub" ? "Storing bulletin for all users..." : "Sending bulletin to hub..."); return;
   }
 
   if (command === "/files") {
-    if (!ST.authenticated && ST.role !== "hub") {
-      addSys("✗ Must authenticate first"); return;
-    }
-    wsSend({type:"files"});
-    addSys("Requesting file list...");
-    return;
+    if (!ST.authenticated && ST.role !== "hub") { addSys("✗ Must authenticate first"); return; }
+    wsSend({type:"files"}); addSys("Requesting file list..."); return;
   }
 
   if (command === "/download") {
     if (!args) { addSys("Usage: /download <filename>"); return; }
-    if (!ST.authenticated && ST.role !== "hub") {
-      addSys("✗ Must authenticate first"); return;
-    }
-    if (ST.role !== "hub" && ST.connState !== 2) {
-      addSys("✗ Not connected — use /connect first"); return;
-    }
+    if (!ST.authenticated && ST.role !== "hub") { addSys("✗ Must authenticate first"); return; }
+    if (ST.role !== "hub" && ST.connState !== 2) { addSys("✗ Not connected"); return; }
     wsSend({type:"download", filename:args});
-    addSys(ST.role === "hub" ? "Checking file: " + args : "Requesting download: " + args);
-    return;
+    addSys(ST.role === "hub" ? "Checking file: " + args : "Requesting download: " + args); return;
   }
 
-  if (command === "/cancel") {
-    wsSend({type:"cancel"});
-    addSys("Cancelling...");
-    return;
-  }
+  if (command === "/cancel") { wsSend({type:"cancel"}); addSys("Cancelling..."); return; }
 
   if (command === "/encrypt") {
     if (args === "off") {
-      ST.encEnabled = false; updateStatus();
-      addSys("⚠ Encryption DISABLED — messages in PLAINTEXT");
+      ST.encEnabled = false; updateStatus(); addSys("⚠ Encryption DISABLED — messages in PLAINTEXT");
       wsSend({type:"set_encrypt", enabled:false});
     } else if (args === "on") {
-      ST.encEnabled = true; updateStatus();
-      addSys("✓ Encryption enabled");
+      ST.encEnabled = true; updateStatus(); addSys("✓ Encryption enabled");
       wsSend({type:"set_encrypt", enabled:true});
-    } else {
-      addSys("Usage: /encrypt on|off");
-    }
+    } else { addSys("Usage: /encrypt on|off"); }
     return;
   }
 
@@ -1026,67 +1216,26 @@ function handleCommand(raw) {
     if (!args) { addSys("Usage: /passwd <current_password> <new_password>"); return; }
     const pp = args.split(/\s+/);
     if (pp.length < 2) { addSys("Usage: /passwd <current_password> <new_password>"); return; }
-    if (ST.role !== "hub" && ST.connState !== 2) {
-      addSys("✗ Not connected — use /connect first"); return;
-    }
-    wsSend({type:"passwd", current: pp[0], new: pp.slice(1).join(" ")});
-    return;
+    if (ST.role !== "hub" && ST.connState !== 2) { addSys("✗ Not connected"); return; }
+    wsSend({type:"passwd", current: pp[0], new: pp.slice(1).join(" ")}); return;
   }
 
   if (command === "/adduser") {
-    if (ST.role !== "hub") {
-      addSys("✗ /adduser is a hub-only command"); return;
-    }
+    if (ST.role !== "hub") { addSys("✗ /adduser is a hub-only command"); return; }
     const up = args.split(/\s+/);
-    if (up.length !== 2) {
-      addSys("Usage: /adduser <CALLSIGN> <password>"); return;
-    }
+    if (up.length !== 2) { addSys("Usage: /adduser <CALLSIGN> <password>"); return; }
     wsSend({type:"adduser", call:up[0].toUpperCase(), password:up[1]});
-    addSys("Adding user " + up[0].toUpperCase() + "...");
-    return;
+    addSys("Adding user " + up[0].toUpperCase() + "..."); return;
   }
 
   if (command === "/listusers") {
-    if (ST.role !== "hub") {
-      addSys("✗ /listusers is a hub-only command"); return;
-    }
+    if (ST.role !== "hub") { addSys("✗ Hub-only command"); return; }
     wsSend({type:"listusers"}); return;
   }
 
   if (command === "/storage" || command === "/stats") {
-    if (ST.role !== "hub") {
-      addSys("✗ /storage is a hub-only command"); return;
-    }
+    if (ST.role !== "hub") { addSys("✗ Hub-only command"); return; }
     wsSend({type:"storage"}); return;
-  }
-
-  if (command === "/clear") {
-    const outEl = document.getElementById("console-out");
-    if (outEl) outEl.innerHTML = "";
-    // Also hide the help panel if visible
-    if (ST.helpVisible) {
-      ST.helpVisible = false;
-      document.getElementById("help-panel").style.display = "none";
-    }
-    addSys("Console cleared");
-    return;
-  }
-
-  if (command === "/announce") {
-    if (ST.transport !== "freedv") {
-      addSys("✗ /announce is only available in FreeDV mode");
-      addSys("  Select FreeDV HF transport first");
-      return;
-    }
-    if (!args) {
-      addSys("Usage: /announce <message>");
-      addSys("  Broadcasts to all listening FreeDV stations");
-      addSys("  Example: /announce Net on 14.105 at 1900z");
-      return;
-    }
-    addSys("📢 Announcing: " + args);
-    wsSend({type:"announce", text: args});
-    return;
   }
 
   addSys("Unknown command: " + command);
@@ -1100,22 +1249,16 @@ function submitInput() {
   const inp = document.getElementById("msg-input");
   const val = inp.value.trim();
   if (!val) return;
-  inp.value = "";
-  ST.histIdx = -1;
-
-  // Add to history (avoid consecutive duplicates)
+  inp.value = ""; ST.histIdx = -1;
   if (ST.history[0] !== val) ST.history.unshift(val);
   if (ST.history.length > 50) ST.history.pop();
 
   if (val.startsWith("/")) {
     handleCommand(val);
   } else {
-    if (ST.connState !== 2) {
-      addSys("✗ Not connected — use /connect <IP> first"); return;
-    }
-    if (!ST.authenticated && ST.role !== "hub") {
-      addSys("Must authenticate first — use /auth <password>"); return;
-    }
+    // Hub role: chat is broadcast to all connected spokes automatically by HubCore
+    if (ST.role !== "hub" && ST.connState !== 2) { addSys("✗ Not connected — use /connect <IP> first"); return; }
+    if (!ST.authenticated && ST.role !== "hub") { addSys("Must authenticate first — use /auth <password>"); return; }
     addMsg(ST.mycall, val, true);
     wsSend({type:"chat", text:val});
   }
@@ -1123,73 +1266,64 @@ function submitInput() {
 
 function fillInput(cmd) {
   const inp = document.getElementById("msg-input");
+  if (!inp) return;
   inp.value = cmd;
   inp.focus();
+  // Commands ending with a space need an argument — just fill and let
+  // the user type it.  Complete commands (no trailing space) execute now.
+  if (cmd.slice(-1) !== " ") {
+    submitInput();
+  } else {
+    inp.setSelectionRange(inp.value.length, inp.value.length);
+  }
 }
+function toggleHelp() { ST.helpVisible = !ST.helpVisible; document.getElementById("help-panel").style.display = ST.helpVisible ? "block" : "none"; }
 
-function toggleHelp() {
-  ST.helpVisible = !ST.helpVisible;
-  document.getElementById("help-panel").style.display =
-    ST.helpVisible ? "block" : "none";
-}
-
-// ── Silent time sync (all stations) ─────────────────────────────────────
-// Fires on every console page load to keep Pi clock accurate.
-// Uses the lighter /api/sync-time-auto which only sets if drift > 60s.
-(function() {
-  const now = new Date();
-  fetch("/api/sync-time-auto", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({unix: now.getTime() / 1000})
-  }).catch(() => {});  // silent — best effort
-})();
-
-// Input keyboard handling
+// ── Keyboard ─────────────────────────────────────────────────────
 document.getElementById("msg-input").addEventListener("keydown", function(e) {
   if (e.key === "Enter") { submitInput(); return; }
-
-  // Command history
   if (e.key === "ArrowUp") {
     e.preventDefault();
-    if (ST.histIdx < ST.history.length - 1) {
-      ST.histIdx++;
-      this.value = ST.history[ST.histIdx] || "";
-    }
-    return;
+    if (ST.histIdx < ST.history.length-1) { ST.histIdx++; this.value = ST.history[ST.histIdx]||""; } return;
   }
   if (e.key === "ArrowDown") {
     e.preventDefault();
-    if (ST.histIdx > 0) {
-      ST.histIdx--;
-      this.value = ST.history[ST.histIdx] || "";
-    } else {
-      ST.histIdx = -1; this.value = "";
-    }
-    return;
+    if (ST.histIdx > 0) { ST.histIdx--; this.value = ST.history[ST.histIdx]||""; }
+    else { ST.histIdx = -1; this.value = ""; } return;
   }
 });
+document.addEventListener("keydown", function(e) { if (e.ctrlKey && e.key === "h") { e.preventDefault(); toggleHelp(); } });
 
-// Ctrl+H for help
-document.addEventListener("keydown", function(e) {
-  if (e.ctrlKey && e.key === "h") { e.preventDefault(); toggleHelp(); }
-});
+// ── Silent time sync ──────────────────────────────────────────────
+(function() {
+  fetch("/api/sync-time-auto", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({unix: Date.now()/1000})
+  }).catch(()=>{});
+})();
+
+// ── Show hub broadcast bar ────────────────────────────────────────
+if ("{{ settings.role }}" === "hub") {
+  const bb = document.getElementById("bcast-bar");
+  if (bb) bb.style.display = "flex";
+}
 
 // ================================================================
-// Boot sequence
+// Boot
 // ================================================================
 document.addEventListener("DOMContentLoaded", function() {
   updateStatus();
+  rcRender();   // populate recent connections from localStorage
   addSys("HF-256 Console ready. Type /help for commands.");
-  addSys("Transport: TCP/Internet selected.");
-  if ("{{ settings.hub_address }}") {
-    addSys("Configured hub: {{ settings.hub_address }}");
-    addSys("Type /connect {{ settings.hub_address }} to connect.");
+  if ("{{ settings.role }}" === "hub") {
+    addSys("TCP/Internet always active — hub listening on port 14256.");
+    addSys("Select ARDOP or AX.25 to also accept radio connections.");
+  } else if ("{{ settings.hub_address }}") {
+    addSys("Select a transport, then /connect {{ settings.hub_address }}");
   } else {
-    addSys("Use /connect <IP_ADDRESS> to connect to a hub.");
+    addSys("Select a transport, then /connect <HUB-IP-or-CALLSIGN>.");
   }
   addSys("──────────────────────────────────────────────────────");
-  // Connect WebSocket
   wsConnect();
 });
 </script>

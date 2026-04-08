@@ -113,13 +113,12 @@
   .hf-logo img {
     width: 28px; height: 28px;
     border-radius: 6px;
-    /* subtle glow matching the lock icon's green */
     filter: drop-shadow(0 0 4px rgba(46,160,67,0.4));
   }
   .hf-logo span {
     font-size: 0.88rem; font-weight: 700;
     color: var(--accent); letter-spacing: 0.04em;
-    display: none;   /* show text only on wider screens */
+    display: none;
   }
   @media (min-width: 480px) { .hf-logo span { display: inline; } }
 </style>
@@ -127,11 +126,12 @@
 <body>
 <div class="container">
   <nav>
-    <a class="hf-logo" href="/status"><img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span></a><a class="nav-btn active" href="/status">Status</a>
+    <a class="hf-logo" href="/status"><img src="/static/favicon-32x32.png" alt="HF-256"><span>HF-256</span></a>
+    <a class="nav-btn active" href="/status">Status</a>
     <a class="nav-btn" href="/settings">Settings</a>
     <a class="nav-btn" href="/console">Console</a>
-  <a class="nav-btn" href="/files">Hub Files</a>
-  <a class="nav-btn" href="/help">Help</a>
+    <a class="nav-btn" href="/files">Hub Files</a>
+    <a class="nav-btn" href="/help">Help</a>
   </nav>
 
   <h1>HF-256</h1>
@@ -149,7 +149,7 @@
        callsign, encryption key, and station role.</p>
   </div>
 
-  <!-- Services -->
+  <!-- ── Services ─────────────────────────────────────────── -->
   <div class="card">
     <h2>Services</h2>
     <div id="svc-list">
@@ -165,7 +165,7 @@
     </div>
   </div>
 
-  <!-- System Health -->
+  <!-- ── System Health ─────────────────────────────────────── -->
   <div class="card">
     <h2>System</h2>
     <div class="stats-grid" id="stats-grid">
@@ -188,7 +188,7 @@
     </div>
   </div>
 
-  <!-- System Clock (hub only) -->
+  <!-- ── System Clock (hub only) ──────────────────────────── -->
   {% if settings.role == 'hub' %}
   <div class="card" id="clock-card">
     <h2>System Clock</h2>
@@ -218,9 +218,9 @@
   </div>
   {% endif %}
 
-  <!-- Modem Status -->
+  <!-- ── Modem Status ──────────────────────────────────────── -->
   <div class="card">
-    <h2>FreeDV Modem</h2>
+    <h2>Modem Status</h2>
     <div id="modem-info">
       <div class="modem-row">
         <span class="modem-key">Status</span>
@@ -239,29 +239,14 @@
         <span class="modem-val" id="modem-channel">--</span>
       </div>
     </div>
-    <div class="btn-row" style="margin-top:12px">
-      <label style="color:var(--muted);font-size:0.85rem;
-                    align-self:center;margin:0">Mode:</label>
-      <select id="mode-select" style="padding:6px 10px;
-        background:var(--bg);border:1px solid var(--border);
-        border-radius:5px;color:var(--text)">
-        <option>DATAC1</option>
-        <option>DATAC3</option>
-        <option>DATAC4</option>
-      </select>
-      <button class="btn btn-secondary" onclick="setMode()">
-        Apply
-      </button>
-    </div>
   </div>
 
-  <!-- Logs -->
+  <!-- ── Logs ─────────────────────────────────────────────── -->
   <div class="card">
     <h2>Logs</h2>
     <div class="log-select">
       <select id="log-service">
         <option value="hf256">hf256</option>
-        <option value="freedvtnc2">freedvtnc2</option>
         <option value="rigctld">rigctld</option>
         <option value="hf256-portal">portal</option>
         <option value="hf256-firstboot">firstboot</option>
@@ -274,7 +259,7 @@
     <div class="log-box" id="log-box">Select service and click Refresh</div>
   </div>
 
-  <!-- System Actions -->
+  <!-- ── System Actions ───────────────────────────────────── -->
   <div class="card">
     <h2>System Actions</h2>
     <div class="btn-row">
@@ -301,6 +286,7 @@
 let refreshInterval = null;
 let refreshCount    = 0;
 
+// ── Service row builder ───────────────────────────────────────────────────
 function buildSvcRow(name, running, label) {
   return `
     <div class="svc-row">
@@ -320,65 +306,78 @@ function buildSvcRow(name, running, label) {
     </div>`;
 }
 
+// ── Main status refresh ───────────────────────────────────────────────────
 function refreshStatus() {
+  // ── Service status ───────────────────────────────────────────────────
   fetch("/api/service-status")
-    .then(r => r.json())
-    .then(d => {
-      const setupComplete = d.setup_complete;
-      const callsign = d.callsign || "N0CALL";
-      const role = d.role || "";
+    .then(function(r) {
+      if (!r.ok) { throw new Error("service-status HTTP " + r.status); }
+      return r.json();
+    })
+    .then(function(d) {
+      // Setup-complete warning banner
       var warn = document.getElementById("setup-warn");
-      if (setupComplete && role !== "" && callsign !== "N0CALL") {
-        warn.style.display = "none";
+      if (d.setup_complete && d.role && d.callsign !== "N0CALL") {
+        warn.classList.add("hidden");
       } else {
-        warn.style.display = "block";
+        warn.classList.remove("hidden");
       }
 
-      let html = "";
-      html += buildSvcRow("freedvtnc2", d.freedvtnc2.running,  "FreeDV Modem");
-      html += buildSvcRow("rigctld",    d.rigctld.running,     "rigctld CAT");
-      // ardopc is a subprocess managed by the portal, not a systemd service
+      var html = "";
+
+      // rigctld — systemd-managed CAT control daemon
+      html += buildSvcRow("rigctld", d.rigctld.running, "rigctld CAT");
+
+      // ardopc — subprocess managed by console, shown as informational
       if (d.ardopc !== undefined) {
-        const ardopDot = d.ardopc.running ? 'dot-ok' : 'dot-idle';
-        const ardopBadge = d.ardopc.running ?
-          '<span class="svc-badge badge-ok">running</span>' :
-          '<span class="svc-badge" style="background:rgba(139,148,158,0.15);color:var(--muted)">idle</span>';
-        html += `<div class="svc-row">
-          <div class="dot ${ardopDot}"></div>
-          <div class="svc-name">ARDOP Modem</div>
-          ${ardopBadge}
-          <div class="svc-ctrl"><span style="font-size:0.75rem;color:var(--muted)">managed by console</span></div>
-        </div>`;
+        var ardopDot   = d.ardopc.running ? "dot-ok" : "dot-idle";
+        var ardopBadge = d.ardopc.running
+          ? '<span class="svc-badge badge-ok">running</span>'
+          : '<span class="svc-badge" style="background:rgba(139,148,158,0.15);color:var(--muted)">idle</span>';
+        html += '<div class="svc-row">' +
+          '<div class="dot ' + ardopDot + '"></div>' +
+          '<div class="svc-name">ARDOP Modem</div>' +
+          ardopBadge +
+          '<div class="svc-ctrl"><span style="font-size:0.75rem;color:var(--muted)">managed by console</span></div>' +
+          '</div>';
       }
-      html += buildSvcRow("hf256-portal", d.portal.running,   "Web Portal");
 
-      const apRunning = d.wifi && d.wifi.ap_running;
+      // Web portal — systemd-managed
+      html += buildSvcRow("hf256-portal", d.portal.running, "Web Portal");
+
+      // WiFi AP — hostapd, shown only when in AP mode
+      var apRunning = d.wifi && d.wifi.ap_running;
       html += buildSvcRow("hostapd", apRunning,
-        "WiFi AP " + (d.wifi ? "(" + d.wifi.ssid + ")" : ""));
+        "WiFi AP" + (d.wifi ? " (" + d.wifi.ssid + ")" : ""));
 
       document.getElementById("svc-list").innerHTML = html;
     })
-    .catch(() => {});
+    .catch(function(err) {
+      console.error("service-status fetch error:", err);
+      // Leave the list visible with last content; don't blank it
+    });
 
+  // ── System health ────────────────────────────────────────────────────
   fetch("/api/system-health")
-    .then(r => r.json())
-    .then(d => {
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
       document.getElementById("stat-temp").textContent =
         d.cpu_temp !== null ? d.cpu_temp + "°C" : "--";
       document.getElementById("stat-uptime").textContent =
         d.uptime || "--";
       document.getElementById("stat-mem").textContent =
-        d.memory_percent !== undefined ?
-        d.memory_percent + "%" : "--";
+        d.memory_percent !== undefined ? d.memory_percent + "%" : "--";
       document.getElementById("stat-disk").textContent =
-        d.disk_percent !== undefined ?
-        d.disk_percent + "%" : "--";
+        d.disk_percent !== undefined ? d.disk_percent + "%" : "--";
     })
-    .catch(() => {});
+    .catch(function(err) {
+      console.warn("system-health fetch error:", err);
+    });
 
+  // ── Modem status ─────────────────────────────────────────────────────
   fetch("/api/modem-status")
-    .then(r => r.json())
-    .then(d => {
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
       document.getElementById("modem-online").textContent =
         d.online ? "Online" : "Offline";
       document.getElementById("modem-mode").textContent =
@@ -387,11 +386,9 @@ function refreshStatus() {
         d.ptt || "--";
       document.getElementById("modem-channel").textContent =
         d.channel || "--";
-      if (d.mode) {
-        document.getElementById("mode-select").value = d.mode;
-      }
     })
-    .catch(() => {
+    .catch(function(err) {
+      console.warn("modem-status fetch error:", err);
       document.getElementById("modem-online").textContent = "Offline";
     });
 
@@ -400,91 +397,86 @@ function refreshStatus() {
     "next refresh in 10s (cycle " + refreshCount + ")";
 }
 
+// ── Service control ───────────────────────────────────────────────────────
 function ctrlSvc(name, action) {
-  fetch("/api/service/" + name + "/" + action, {method: "POST"})
-    .then(() => setTimeout(refreshStatus, 1500))
-    .catch(() => {});
+  fetch("/api/service/" + name + "/" + action, { method: "POST" })
+    .then(function() { setTimeout(refreshStatus, 1500); })
+    .catch(function(err) { console.error("ctrlSvc error:", err); });
 }
 
+// ── Restart stack ─────────────────────────────────────────────────────────
 function restartAll() {
-  if (!confirm("Restart FreeDV modem and HF-256 app?")) return;
-  fetch("/api/restart-services", {method: "POST"})
-    .then(r => r.json())
-    .then(d => { alert(d.message || "Restarted"); refreshStatus(); })
-    .catch(() => {});
+  if (!confirm("Restart ARDOP modem and HF-256 app?")) return;
+  fetch("/api/restart-services", { method: "POST" })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { alert(d.message || "Restarted"); refreshStatus(); })
+    .catch(function(err) { console.error("restartAll error:", err); });
 }
 
-function setMode() {
-  const mode = document.getElementById("mode-select").value;
-  fetch("/api/set-freedv-mode", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({mode})
-  })
-  .then(r => r.json())
-  .then(d => { if (d.success) refreshStatus(); })
-  .catch(() => {});
-}
-
+// ── Log viewer ────────────────────────────────────────────────────────────
 function loadLogs() {
-  const svc = document.getElementById("log-service").value;
-  const box = document.getElementById("log-box");
+  var svc = document.getElementById("log-service").value;
+  var box = document.getElementById("log-box");
   box.textContent = "Loading...";
   fetch("/api/logs/" + svc + "?lines=60")
-    .then(r => r.json())
-    .then(d => {
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
       box.textContent = d.logs || "No logs";
       box.scrollTop   = box.scrollHeight;
     })
-    .catch(e => { box.textContent = "Error: " + e; });
+    .catch(function(e) {
+      console.error("loadLogs error:", e);
+      box.textContent = "Error loading logs: " + e;
+    });
 }
 
+// ── System actions ────────────────────────────────────────────────────────
 function doReboot() {
   if (!confirm("Reboot the Pi?")) return;
-  fetch("/api/reboot", {method: "POST"})
-    .then(r => r.json())
-    .then(d => alert(d.message))
-    .catch(() => {});
+  fetch("/api/reboot", { method: "POST" })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { alert(d.message); })
+    .catch(function(err) { console.error("reboot error:", err); });
 }
 
 function doShutdown() {
   if (!confirm("Shut down the Pi?")) return;
-  fetch("/api/shutdown", {method: "POST"})
-    .then(r => r.json())
-    .then(d => alert(d.message))
-    .catch(() => {});
+  fetch("/api/shutdown", { method: "POST" })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { alert(d.message); })
+    .catch(function(err) { console.error("shutdown error:", err); });
 }
 
 function resetSetup() {
   if (!confirm("This will stop all services and return to the " +
                "hardware setup wizard. Continue?")) return;
-  fetch("/api/reset-setup", {method: "POST"})
-    .then(r => r.json())
-    .then(d => {
+  fetch("/api/reset-setup", { method: "POST" })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
       if (d.success) window.location.href = "/";
       else alert("Error: " + d.error);
     })
-    .catch(() => {});
+    .catch(function(err) { console.error("resetSetup error:", err); });
 }
 
-// ── Time sync ────────────────────────────────────────────────────────────
+// ── Time sync ─────────────────────────────────────────────────────────────
 function syncTime(silent) {
-  const now  = new Date();
-  const iso  = now.toISOString().replace(/\.\d+Z$/, "Z");
-  const unix = now.getTime() / 1000;
-  const btn  = document.getElementById("sync-btn");
+  var now  = new Date();
+  var iso  = now.toISOString().replace(/\.\d+Z$/, "Z");
+  var unix = now.getTime() / 1000;
+  var btn  = document.getElementById("sync-btn");
   if (btn) { btn.disabled = true; btn.textContent = "Syncing..."; }
 
   fetch("/api/set-time", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({iso, unix})
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ iso: iso, unix: unix })
   })
-  .then(r => r.json())
-  .then(d => {
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
     if (btn) { btn.disabled = false; btn.textContent = "⟳ Sync from browser"; }
-    const el  = document.getElementById("clock-status");
-    const wrn = document.getElementById("clock-warning");
+    var el  = document.getElementById("clock-status");
+    var wrn = document.getElementById("clock-warning");
     if (d.ok) {
       if (d.action === "set") {
         if (el) { el.textContent = "✓ Clock set (was " + d.drift + "s off)";
@@ -503,9 +495,10 @@ function syncTime(silent) {
     }
     loadClock();
   })
-  .catch(() => {
+  .catch(function(err) {
+    console.warn("syncTime error:", err);
     if (btn) { btn.disabled = false; btn.textContent = "⟳ Sync from browser"; }
-    const el = document.getElementById("clock-status");
+    var el = document.getElementById("clock-status");
     if (el && !silent) { el.textContent = "✗ Could not reach server";
                          el.style.color = "var(--red)"; }
   });
@@ -513,15 +506,14 @@ function syncTime(silent) {
 
 function loadClock() {
   fetch("/api/get-time")
-    .then(r => r.json())
-    .then(d => {
-      const el  = document.getElementById("clock-display");
-      const wrn = document.getElementById("clock-warning");
-      const btn = document.getElementById("sync-btn");
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var el  = document.getElementById("clock-display");
+      var wrn = document.getElementById("clock-warning");
+      var btn = document.getElementById("sync-btn");
       if (el) el.textContent = d.utc || "--";
-      // Show warning if clock is more than 24h off from browser
       if (wrn && d.unix) {
-        const drift = Math.abs(d.unix - Date.now() / 1000);
+        var drift = Math.abs(d.unix - Date.now() / 1000);
         if (drift > 86400) {
           wrn.style.display = "block";
           if (btn) btn.className = "btn btn-primary btn-small";
@@ -531,25 +523,26 @@ function loadClock() {
         }
       }
     })
-    .catch(() => {});
+    .catch(function(err) { console.warn("loadClock error:", err); });
 }
 
+// ── Boot ──────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", function() {
+  // Small delay so Flask has fully started before first poll
   setTimeout(refreshStatus, 2000);
   refreshInterval = setInterval(refreshStatus, 10000);
-  // Auto-sync time silently on page load (all stations)
-  // Uses sync-time-auto which only sets clock if drift > 60s
+
+  // Auto-sync time silently on page load (only corrects if drift > 60s)
   fetch("/api/sync-time-auto", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({unix: Date.now() / 1000})
-  }).catch(() => {});
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ unix: Date.now() / 1000 })
+  }).catch(function(err) { console.warn("sync-time-auto error:", err); });
+
   syncTime(true);
   loadClock();
-  // Refresh clock display every 30s
   setInterval(loadClock, 30000);
 });
-
 </script>
 </body>
 </html>

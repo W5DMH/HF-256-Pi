@@ -346,37 +346,64 @@ def release_ptt(port: str, radio_id: str) -> dict:
 
 def set_audio_levels(card: int, speaker_pct: int = 80,
                      mic_pct: int = 75) -> dict:
-    """Set ALSA mixer levels for a USB audio card."""
+    """
+    Set ALSA capture (RX) and playback (TX) levels for a USB audio card.
+
+    DigiRig and CM108 dongles use different ALSA control names:
+      DigiRig:  'Speaker', 'Mic'
+      CM108:    'Speaker', 'Mic', 'Auto Gain Control'
+      Generic:  'Master', 'PCM', 'Capture'
+
+    Strategy: use `amixer sset` for every plausible control name and
+    ignore errors — only the controls that actually exist will respond.
+    This is more reliable than pattern matching against control name lists
+    which vary by driver version and USB device firmware.
+    """
     results = []
-    controls = get_audio_controls(card)
 
-    for control in controls:
-        name = control.get("name", "").lower()
+    # Playback (TX) controls — drive level of outgoing audio to radio
+    tx_targets = ["Speaker", "PCM", "Master", "Headphone", "Line Out"]
+    # Capture (RX) controls — sensitivity of incoming audio from radio
+    rx_targets = ["Mic", "Capture", "Line In", "Aux"]
+    # Controls to disable (AGC causes level instability with AFSK)
+    agc_targets = ["Auto Gain Control"]
+
+    def _sset(name: str, value: str) -> bool:
         try:
-            if "speaker" in name or "pcm" in name or "master" in name:
-                subprocess.run(
-                    ["amixer", "-c", str(card), "sset",
-                     control["name"], f"{speaker_pct}%"],
-                    capture_output=True, timeout=5
-                )
-                results.append(f"Set {control['name']} to {speaker_pct}%")
+            r = subprocess.run(
+                ["amixer", "-c", str(card), "sset", name, value],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode == 0:
+                log.info("amixer card %d: set '%s' to %s", card, name, value)
+                return True
+        except Exception as exc:
+            log.debug("amixer card %d sset '%s' %s: %s", card, name, value, exc)
+        return False
 
-            elif "mic" in name or "capture" in name:
-                subprocess.run(
-                    ["amixer", "-c", str(card), "sset",
-                     control["name"], f"{mic_pct}%"],
-                    capture_output=True, timeout=5
-                )
-                results.append(f"Set {control['name']} to {mic_pct}%")
+    for ctrl in tx_targets:
+        if _sset(ctrl, f"{speaker_pct}%"):
+            results.append(f"{ctrl}={speaker_pct}%")
 
-                # Disable AGC if present
-                subprocess.run(
-                    ["amixer", "-c", str(card), "sset",
-                     control["name"], "nocap"],
-                    capture_output=True, timeout=5
-                )
-        except Exception as e:
-            log.warning("amixer error for %s: %s", control["name"], e)
+    for ctrl in rx_targets:
+        if _sset(ctrl, f"{mic_pct}%"):
+            results.append(f"{ctrl}={mic_pct}%")
+
+    for ctrl in agc_targets:
+        if _sset(ctrl, "off"):
+            results.append(f"{ctrl}=off")
+
+    if not results:
+        # Nothing matched — list what's actually available for diagnostics
+        available = [c["name"] for c in get_audio_controls(card)]
+        log.warning("set_audio_levels: no controls matched on card %d. "
+                    "Available: %s", card, available)
+        return {
+            "success": False,
+            "results": [],
+            "error": f"No recognised controls on card {card}. "
+                     f"Available: {', '.join(available)}",
+        }
 
     return {"success": True, "results": results}
 
@@ -387,14 +414,14 @@ def get_audio_controls(card: int) -> list:
     try:
         result = subprocess.run(
             ["amixer", "-c", str(card), "controls"],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=5,
         )
         for line in result.stdout.split("\n"):
             m = re.search(r"name='([^']+)'", line)
             if m:
                 controls.append({"name": m.group(1)})
-    except Exception as e:
-        log.error("get_audio_controls error: %s", e)
+    except Exception as exc:
+        log.error("get_audio_controls error: %s", exc)
     return controls
 
 

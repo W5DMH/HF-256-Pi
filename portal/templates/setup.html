@@ -335,7 +335,7 @@ function detectHardware() {
       sp.onchange = () => { serialPort = sp.value; checkReady(); };
       ac.onchange = () => { audioCard  = ac.value; checkReady(); };
 
-      const autoDetected = data.digirig.found || data.x6100.found;
+      const autoDetected = data.digirig.found;
       document.getElementById("detect-badge").style.display =
         autoDetected ? "inline" : "none";
 
@@ -343,8 +343,6 @@ function detectHardware() {
                 data.audio_devices.length + " audio card(s) found";
       if (data.digirig.found)
         msg += " — DigiRig Mobile auto-detected";
-      else if (data.x6100.found)
-        msg += " — Xiegu X6100 auto-detected";
       else if (data.serial_ports.some(p => p.port.includes("ttyACM")))
         msg += " — CI-V radio detected on ttyACM — select your model above";
 
